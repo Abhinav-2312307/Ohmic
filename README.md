@@ -33,9 +33,15 @@ All models are built with exact physical dimensions (2.54mm breadboard pitch, JE
 - `components/led_5mm_red.glb`: 5mm red through-hole LED with translucent epoxy dome and internal anvil/post.
 - `components/led_5mm_green.glb`: 5mm green through-hole LED.
 - `components/led_5mm_blue.glb`: 5mm blue through-hole LED.
+- `components/bulb_incandescent.glb`: Miniature screw-base incandescent bulb with glass dome, coiled tungsten filament, and brass screw base.
+- `components/potentiometer_10k.glb`: 10kΩ rotary potentiometer with knurled rotating shaft and 3 breadboard pins.
+- `components/inductor_toroid.glb`: High-current toroidal inductor with ferrite core ring and 16 enameled copper coil windings.
+- `components/speaker_8ohm.glb`: 8Ω dynamic mini speaker with mylar diaphragm cone, center dust cap, rear ferrite magnet, and solder lugs.
 - `components/dip8_ic.glb`: Standard 8-pin Dual In-Line Package chip (NE555 / Op-Amps).
 - `components/capacitor_electrolytic.glb`: Radial can capacitor with polarity band and top safety vent.
 - `components/button_tactile_6mm.glb`: 6x6mm momentary tactile push-button switch.
+- `components/display_7seg_1digit.glb`: 1.0-inch 1-digit 7-segment LED display with individually addressable segments (A-G, DP) and 10 pins.
+- `components/dupont_male_pin.glb`: Standard 2.54mm black shrouded DuPont connector pin head for dynamic jumper cables.
 
 ### 🔋 Power & Instruments
 - `power/battery_9v.glb`: 9V battery with polarized snap terminals.
