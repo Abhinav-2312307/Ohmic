@@ -1,4 +1,4 @@
-# Ohmic ⚡
+# Circuit Breadboard Simulation⚡
 ### Realistic Multi-Scale 3D/2D Circuit Simulator, Workbench & Electrical CAD
 
 [![GitHub License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
