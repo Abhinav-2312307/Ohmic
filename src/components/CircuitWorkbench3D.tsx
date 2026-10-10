@@ -892,8 +892,7 @@ export default function CircuitWorkbench3D({
 
   return (
     <div
-      ref={containerRef}
-      className="relative w-full h-full select-none overflow-hidden cursor-crosshair"
+      className="relative w-full h-full select-none overflow-hidden cursor-crosshair bg-[#0a0b0e]"
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -908,6 +907,9 @@ export default function CircuitWorkbench3D({
         }
       }}
     >
+      {/* Dedicated Three.js canvas mount container - isolated from React virtual DOM */}
+      <div ref={containerRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+
       {/* Floating Status & Instruction Banner */}
       {statusMessage && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-none glass-dock px-4 py-2 rounded-xl text-xs font-mono text-amber-300 shadow-xl border border-amber-500/30 flex items-center gap-2 animate-in fade-in duration-150">
@@ -921,8 +923,8 @@ export default function CircuitWorkbench3D({
         <span>• Left-drag: Orbit</span>
         <span>• Right-drag: Pan</span>
         <span>• Scroll: Zoom</span>
-        <span>• 'R': Rotate 90°</span>
-        <span>• 'Esc': Cancel</span>
+        <span>• &apos;R&apos;: Rotate 90°</span>
+        <span>• &apos;Esc&apos;: Cancel</span>
       </div>
     </div>
   );
