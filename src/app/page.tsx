@@ -106,6 +106,14 @@ export default function OhmicWorkbenchPage() {
   const handleDeleteSelected = useCallback(() => {
     if (selectedComponentId) {
       setComponents((prev) => prev.filter((c) => c.id !== selectedComponentId));
+      // Also clean up any jumper wires attached directly to this component
+      setWires((prev) =>
+        prev.filter(
+          (w) =>
+            !w.startHoleId.startsWith(`${selectedComponentId}:`) &&
+            !w.endHoleId.startsWith(`${selectedComponentId}:`)
+        )
+      );
       setSelectedComponentId(null);
       audioEngine.playPopSound();
     } else if (selectedWireId) {
@@ -164,26 +172,29 @@ export default function OhmicWorkbenchPage() {
   }, [selectedComponentId, selectedWireId, handleRotateSelected, handleDeleteSelected]);
 
   // Wire creation handler
-  const handleAddWire = useCallback((startHoleId: string, endHoleId: string, color: string) => {
-    const startPos = getHolePosition(startHoleId);
-    const endPos = getHolePosition(endHoleId);
-    if (!startPos || !endPos) return;
+  const handleAddWire = useCallback(
+    (startHoleId: string, endHoleId: string, color: string) => {
+      const startPos = getHolePosition(startHoleId, components);
+      const endPos = getHolePosition(endHoleId, components);
+      if (!startPos || !endPos) return;
 
-    const newWire: JumperWire = {
-      id: `wire_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
-      startHoleId,
-      endHoleId,
-      startPos,
-      endPos,
-      color,
-      current: 0,
-      voltage: 0,
-    };
+      const newWire: JumperWire = {
+        id: `wire_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+        startHoleId,
+        endHoleId,
+        startPos,
+        endPos,
+        color,
+        current: 0,
+        voltage: 0,
+      };
 
-    setWires((prev) => [...prev, newWire]);
-    setSelectedWireId(newWire.id);
-    setSelectedComponentId(null);
-  }, []);
+      setWires((prev) => [...prev, newWire]);
+      setSelectedWireId(newWire.id);
+      setSelectedComponentId(null);
+    },
+    [components]
+  );
 
   // Component Placement Handler
   const handlePlaceComponent = useCallback(
@@ -191,16 +202,30 @@ export default function OhmicWorkbenchPage() {
       type: ComponentType,
       holeIds: string[],
       rotationDeg: number,
-      defaultValue: number = 1000
+      defaultValue: number = 1000,
+      positionOverride?: [number, number, number]
     ) => {
       const id = `comp_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
       // Calculate 3D position
-      const firstPos = getHolePosition(holeIds[0]);
-      const lastPos = getHolePosition(holeIds[holeIds.length - 1]);
-      const x = firstPos && lastPos ? (firstPos[0] + lastPos[0]) / 2 : 0;
-      const z = firstPos && lastPos ? (firstPos[1] + lastPos[1]) / 2 : 0;
-      const y = 0.012;
+      let x = 0;
+      let z = 0;
+      let y = 0.012;
+
+      if (positionOverride) {
+        x = positionOverride[0];
+        z = positionOverride[1];
+        y = positionOverride[2];
+      } else if (holeIds.length > 0) {
+        const firstPos = getHolePosition(holeIds[0], components);
+        const lastPos = getHolePosition(holeIds[holeIds.length - 1], components);
+        x = firstPos && lastPos ? (firstPos[0] + lastPos[0]) / 2 : 0;
+        z = firstPos && lastPos ? (firstPos[1] + lastPos[1]) / 2 : 0;
+      } else if (type === 'BATTERY_9V') {
+        x = -0.06;
+        z = 0.055;
+        y = 0.0;
+      }
 
       let pins: CircuitComponent['pins'] = [];
       let modelUrl = '';
@@ -243,8 +268,8 @@ export default function OhmicWorkbenchPage() {
           modelUrl = '/models/power/battery_9v.glb';
           unit = 'V';
           pins = [
-            { id: 'pos', name: '+', relativePos: [0.0064, 0, 0.025], connectedHoleId: holeIds[0] || 'TOP_POS_5' },
-            { id: 'neg', name: '-', relativePos: [-0.0064, 0, 0.025], connectedHoleId: holeIds[1] || 'TOP_NEG_5' },
+            { id: 'pos', name: '+', relativePos: [0.0064, 0, 0.048], connectedHoleId: `${id}:pos` },
+            { id: 'neg', name: '-', relativePos: [-0.0064, 0, 0.048], connectedHoleId: `${id}:neg` },
           ];
           break;
 

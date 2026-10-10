@@ -14,6 +14,7 @@ import {
   getHolePosition,
   findNearestHole,
   getComponentFootprint,
+  getHoleDescription,
 } from '../engine/breadboardModel';
 import { WorkbenchTool } from './TopToolbar';
 import { audioEngine } from '../engine/audioEngine';
@@ -31,7 +32,8 @@ interface CircuitWorkbench3DProps {
     type: ComponentType,
     holeIds: string[],
     rotationDeg: number,
-    defaultValue?: number
+    defaultValue?: number,
+    positionOverride?: [number, number, number]
   ) => void;
   onSelectComponent: (comp: CircuitComponent | null) => void;
   onSelectWire: (wire: JumperWire | null) => void;
@@ -81,6 +83,174 @@ function loadModelPrefab(url: string, callback: (clone: THREE.Group) => void, on
   );
 }
 
+function createBreadboardCanvasTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 2048;
+  canvas.height = 1024;
+  const ctx = canvas.getContext('2d')!;
+
+  // 1. Base plastic casing (clean off-white / light cream ABS plastic)
+  ctx.fillStyle = '#f5f3ec';
+  ctx.fillRect(0, 0, 2048, 1024);
+
+  // Subtle outer beveled rim border
+  ctx.strokeStyle = '#dedad0';
+  ctx.lineWidth = 12;
+  ctx.strokeRect(6, 6, 2036, 1012);
+
+  // 2. Central DIP IC Trough (recessed groove at Z=0, width 7.62mm)
+  // With flipY=true: canvas Y = ((Z + 0.0275) / 0.055) * 1024
+  // Z=0 -> Y=512. Trough height 7.62mm -> ~142px (from Y=441 to 583)
+  const troughTop = 441;
+  const troughBot = 583;
+  const troughGrad = ctx.createLinearGradient(0, troughTop, 0, troughBot);
+  troughGrad.addColorStop(0, '#d1cec5');
+  troughGrad.addColorStop(0.15, '#e4e1d8');
+  troughGrad.addColorStop(0.5, '#ece9e0');
+  troughGrad.addColorStop(0.85, '#e4e1d8');
+  troughGrad.addColorStop(1, '#d1cec5');
+  ctx.fillStyle = troughGrad;
+  ctx.fillRect(20, troughTop, 2008, troughBot - troughTop);
+
+  // Center trough divider shadow line
+  ctx.strokeStyle = '#c4c0b5';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(20, 512);
+  ctx.lineTo(2028, 512);
+  ctx.stroke();
+
+  // Helper coordinate mappers
+  const toX = (wx: number) => ((wx + 0.0825) / 0.165) * 2048;
+  const toY = (wz: number) => ((wz + 0.0275) / 0.055) * 1024;
+
+  // 3. Power Rail Stripes & Polarity Signs
+  // TOP_POS: wz = 0.0245 -> Y = 968
+  // TOP_NEG: wz = 0.0210 -> Y = 903
+  // BOT_NEG: wz = -0.0210 -> Y = 121
+  // BOT_POS: wz = -0.0245 -> Y = 56
+  const railStartX = toX(-0.078);
+  const railEndX = toX(0.078);
+
+  // TOP_POS (Red stripe)
+  ctx.strokeStyle = '#dc2626';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(railStartX, toY(0.0245));
+  ctx.lineTo(railEndX, toY(0.0245));
+  ctx.stroke();
+
+  // TOP_NEG (Blue stripe)
+  ctx.strokeStyle = '#2563eb';
+  ctx.beginPath();
+  ctx.moveTo(railStartX, toY(0.0210));
+  ctx.lineTo(railEndX, toY(0.0210));
+  ctx.stroke();
+
+  // BOT_NEG (Blue stripe)
+  ctx.strokeStyle = '#2563eb';
+  ctx.beginPath();
+  ctx.moveTo(railStartX, toY(-0.0210));
+  ctx.lineTo(railEndX, toY(-0.0210));
+  ctx.stroke();
+
+  // BOT_POS (Red stripe)
+  ctx.strokeStyle = '#dc2626';
+  ctx.beginPath();
+  ctx.moveTo(railStartX, toY(-0.0245));
+  ctx.lineTo(railEndX, toY(-0.0245));
+  ctx.stroke();
+
+  // Draw Polarity Symbols (+ and -) along the power rails
+  ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (let c = 1; c <= 63; c += 8) {
+    const wx = -((63 - 1) * 0.00254) / 2 + (c - 1) * 0.00254;
+    const px = toX(wx);
+
+    // Top Red (+)
+    ctx.fillStyle = '#dc2626';
+    ctx.fillText('+', px, toY(0.0245) - 18);
+    // Top Blue (-)
+    ctx.fillStyle = '#2563eb';
+    ctx.fillText('−', px, toY(0.0210) - 16);
+    // Bottom Blue (-)
+    ctx.fillStyle = '#2563eb';
+    ctx.fillText('−', px, toY(-0.0210) + 16);
+    // Bottom Red (+)
+    ctx.fillStyle = '#dc2626';
+    ctx.fillText('+', px, toY(-0.0245) + 18);
+  }
+
+  // 4. Column Numbers (1, 5, 10, 15, ..., 60, 63)
+  ctx.font = 'bold 15px ui-monospace, Menlo, Monaco, monospace';
+  ctx.fillStyle = '#475569';
+  const labeledCols = [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 63];
+  labeledCols.forEach((col) => {
+    const wx = -((63 - 1) * 0.00254) / 2 + (col - 1) * 0.00254;
+    const px = toX(wx);
+    ctx.fillText(`${col}`, px, toY(0.0185));
+    ctx.fillText(`${col}`, px, toY(-0.0185));
+  });
+
+  // 5. Row Letters (A, B, C, D, E and F, G, H, I, J)
+  ctx.font = 'bold 16px ui-monospace, Menlo, Monaco, monospace';
+  ctx.fillStyle = '#334155';
+  const rowLabels: [string, number][] = [
+    ['A', 0.01651],
+    ['B', 0.01397],
+    ['C', 0.01143],
+    ['D', 0.00889],
+    ['E', 0.00635],
+    ['F', -0.00635],
+    ['G', -0.00889],
+    ['H', -0.01143],
+    ['I', -0.01397],
+    ['J', -0.01651],
+  ];
+
+  const leftX = toX(-((63 - 1) * 0.00254) / 2 - 0.0038);
+  const rightX = toX(((63 - 1) * 0.00254) / 2 + 0.0038);
+
+  rowLabels.forEach(([letter, wz]) => {
+    const py = toY(wz);
+    ctx.fillText(letter, leftX, py);
+    ctx.fillText(letter, rightX, py);
+  });
+
+  // 6. Draw all 830 Socket Holes with high-contrast socket details
+  BREADBOARD_HOLES.forEach((hole) => {
+    const px = toX(hole.x);
+    const py = toY(hole.y);
+
+    // Outer socket bevel chamfer
+    ctx.fillStyle = '#dedbd2';
+    ctx.strokeStyle = '#c8c4b8';
+    ctx.lineWidth = 1;
+    ctx.fillRect(px - 7, py - 7, 14, 14);
+    ctx.strokeRect(px - 7, py - 7, 14, 14);
+
+    // Inner cavity socket (deep dark opening)
+    ctx.fillStyle = '#111215';
+    ctx.fillRect(px - 5, py - 5, 10, 10);
+
+    // Spring clip glint reflection inside cavity (nickel contact)
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillRect(px - 3, py - 4, 2, 8);
+    ctx.fillStyle = '#64748b';
+    ctx.fillRect(px + 1, py - 4, 2, 8);
+  });
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.generateMipmaps = true;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 export default function CircuitWorkbench3D({
   components,
   wires,
@@ -120,6 +290,7 @@ export default function CircuitWorkbench3D({
   const wireRecordsRef = useRef<Map<string, WireRecord>>(new Map());
   const dmmLeadsRef = useRef<{ red?: THREE.Group; redHole?: string; black?: THREE.Group; blackHole?: string }>({});
   const activeLightsRef = useRef<THREE.PointLight[]>([]);
+  const batteryTerminalsRef = useRef<THREE.Mesh[]>([]);
 
   // Dynamic Wire Stretching Preview Mesh
   const previewWireMeshRef = useRef<THREE.Mesh | null>(null);
@@ -293,25 +464,8 @@ export default function CircuitWorkbench3D({
     const breadboardGroup = new THREE.Group();
     scene.add(breadboardGroup);
 
-    // Load Breadboard Model (with high-detail procedural fallback)
-    const gltfLoader = new GLTFLoader();
-    gltfLoader.load(
-      '/models/boards/breadboard_830.glb',
-      (gltf) => {
-        const bbModel = gltf.scene;
-        bbModel.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-          }
-        });
-        breadboardGroup.add(bbModel);
-      },
-      undefined,
-      () => {
-        createProceduralBreadboard(breadboardGroup);
-      }
-    );
+    // Build High-Fidelity Authentic Procedural Breadboard
+    createProceduralBreadboard(breadboardGroup);
 
     // Generate invisible raycast hitboxes for all 830 breadboard holes
     const holeHitboxGeo = new THREE.CylinderGeometry(0.00095, 0.00095, 0.003, 8);
@@ -394,55 +548,36 @@ export default function CircuitWorkbench3D({
     };
   }, [updateCameraPosition]);
 
-  // Procedural Breadboard Generator (Authentic details)
+  // Procedural Breadboard Generator (High-Contrast Visible Sockets & Markings)
   const createProceduralBreadboard = (group: THREE.Group) => {
-    // Plastic base with subtle cream ABS finish
-    const baseGeo = new THREE.BoxGeometry(0.165, 0.0085, 0.055);
-    const baseMat = new THREE.MeshStandardMaterial({
-      color: 0xf5f3ee,
-      roughness: 0.35,
+    const topTexture = createBreadboardCanvasTexture();
+
+    // Box Materials: [right (+X), left (-X), top (+Y), bottom (-Y), front (+Z), back (-Z)]
+    const sideMat = new THREE.MeshStandardMaterial({
+      color: 0xf5f3ec,
+      roughness: 0.45,
       metalness: 0.02,
     });
-    const base = new THREE.Mesh(baseGeo, baseMat);
+    const topMat = new THREE.MeshStandardMaterial({
+      map: topTexture,
+      roughness: 0.35,
+      metalness: 0.05,
+    });
+
+    const materials = [sideMat, sideMat, topMat, sideMat, sideMat, sideMat];
+    const baseGeo = new THREE.BoxGeometry(0.165, 0.0085, 0.055);
+    const base = new THREE.Mesh(baseGeo, materials);
     base.position.set(0, 0.00425, 0);
     base.castShadow = true;
     base.receiveShadow = true;
     group.add(base);
 
-    // Center DIP IC gutter trough
-    const troughGeo = new THREE.BoxGeometry(0.160, 0.0018, 0.00762);
-    const troughMat = new THREE.MeshStandardMaterial({ color: 0xdedcd7, roughness: 0.5 });
-    const trough = new THREE.Mesh(troughGeo, troughMat);
-    trough.position.set(0, 0.008, 0);
-    group.add(trough);
-
-    // Red & Blue Power Rails
-    const railGeo = new THREE.BoxGeometry(0.155, 0.0002, 0.0008);
-    const redMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
-    const blueMat = new THREE.MeshBasicMaterial({ color: 0x3b82f6 });
-
-    const topRed = new THREE.Mesh(railGeo, redMat);
-    topRed.position.set(0, 0.0086, -0.0245);
-    group.add(topRed);
-
-    const topBlue = new THREE.Mesh(railGeo, blueMat);
-    topBlue.position.set(0, 0.0086, -0.021);
-    group.add(topBlue);
-
-    const botBlue = new THREE.Mesh(railGeo, blueMat);
-    botBlue.position.set(0, 0.0086, 0.021);
-    group.add(botBlue);
-
-    const botRed = new THREE.Mesh(railGeo, redMat);
-    botRed.position.set(0, 0.0086, 0.0245);
-    group.add(botRed);
-
-    // 830 Nickel Spring Contact Holes (Instanced Mesh for high-performance realism)
+    // 830 Nickel Spring Contact Holes (Instanced 3D Depth Meshes)
     const holeSquareGeo = new THREE.BoxGeometry(0.0011, 0.0006, 0.0011);
     const holeContactMat = new THREE.MeshStandardMaterial({
-      color: 0x18181b,
-      roughness: 0.3,
-      metalness: 0.8,
+      color: 0x141518,
+      roughness: 0.25,
+      metalness: 0.85,
     });
     const instancedHoles = new THREE.InstancedMesh(
       holeSquareGeo,
@@ -452,7 +587,7 @@ export default function CircuitWorkbench3D({
     const dummy = new THREE.Object3D();
     let idx = 0;
     BREADBOARD_HOLES.forEach((h) => {
-      dummy.position.set(h.x, 0.0083, h.y);
+      dummy.position.set(h.x, 0.00845, h.y);
       dummy.updateMatrix();
       instancedHoles.setMatrixAt(idx++, dummy.matrix);
     });
@@ -525,6 +660,57 @@ export default function CircuitWorkbench3D({
         componentMeshesRef.current.set(comp.id, compGroup);
         scene.add(compGroup);
 
+        // Attach interactive snap terminals for 9V Battery
+        if (comp.type === 'BATTERY_9V') {
+          // Positive Stud (+) with red collar ring
+          const posTermGeo = new THREE.CylinderGeometry(0.0032, 0.0032, 0.005, 16);
+          const posTermMat = new THREE.MeshStandardMaterial({
+            color: 0xd4d4d8,
+            metalness: 0.95,
+            roughness: 0.15,
+          });
+          const posTerm = new THREE.Mesh(posTermGeo, posTermMat);
+          posTerm.position.set(0.0064, 0.048, 0);
+          posTerm.userData = {
+            isBatteryTerminal: true,
+            terminalId: `${comp.id}:pos`,
+            componentId: comp.id,
+            name: '9V Battery (+) Positive Terminal',
+          };
+          compGroup.add(posTerm);
+
+          const posRingGeo = new THREE.RingGeometry(0.0032, 0.0052, 16);
+          const posRingMat = new THREE.MeshBasicMaterial({ color: 0xef4444, side: THREE.DoubleSide });
+          const posRing = new THREE.Mesh(posRingGeo, posRingMat);
+          posRing.rotation.x = -Math.PI / 2;
+          posRing.position.set(0.0064, 0.0456, 0);
+          compGroup.add(posRing);
+
+          // Negative Stud (-) with black collar ring
+          const negTermGeo = new THREE.CylinderGeometry(0.0036, 0.0036, 0.005, 6);
+          const negTermMat = new THREE.MeshStandardMaterial({
+            color: 0xa1a1aa,
+            metalness: 0.9,
+            roughness: 0.25,
+          });
+          const negTerm = new THREE.Mesh(negTermGeo, negTermMat);
+          negTerm.position.set(-0.0064, 0.048, 0);
+          negTerm.userData = {
+            isBatteryTerminal: true,
+            terminalId: `${comp.id}:neg`,
+            componentId: comp.id,
+            name: '9V Battery (-) Negative Terminal',
+          };
+          compGroup.add(negTerm);
+
+          const negRingGeo = new THREE.RingGeometry(0.0036, 0.0056, 16);
+          const negRingMat = new THREE.MeshBasicMaterial({ color: 0x18181b, side: THREE.DoubleSide });
+          const negRing = new THREE.Mesh(negRingGeo, negRingMat);
+          negRing.rotation.x = -Math.PI / 2;
+          negRing.position.set(-0.0064, 0.0456, 0);
+          compGroup.add(negRing);
+        }
+
         if (comp.modelUrl) {
           loadModelPrefab(
             comp.modelUrl,
@@ -592,7 +778,100 @@ export default function CircuitWorkbench3D({
         });
       }
     });
+
+    // Rebuild active battery terminals cache for raycasting
+    const activeTerminals: THREE.Mesh[] = [];
+    currentRecords.forEach((rec) => {
+      rec.group.traverse((child) => {
+        if ((child as THREE.Mesh).userData?.isBatteryTerminal) {
+          activeTerminals.push(child as THREE.Mesh);
+        }
+      });
+    });
+    batteryTerminalsRef.current = activeTerminals;
   }, [components, selectedComponentId]);
+
+  // Hologram Ghost Preview for Component Placement
+  useEffect(() => {
+    const ghost = ghostGroupRef.current;
+    if (!ghost) return;
+
+    while (ghost.children.length > 0) {
+      const child = ghost.children[0];
+      ghost.remove(child);
+      if ((child as THREE.Mesh).geometry) (child as THREE.Mesh).geometry.dispose();
+    }
+
+    if (!placingComponent) {
+      ghost.visible = false;
+      return;
+    }
+
+    ghost.visible = true;
+
+    let modelUrl = '';
+    switch (placingComponent.type) {
+      case 'RESISTOR':
+        modelUrl = '/models/components/resistor_1k.glb';
+        break;
+      case 'LED':
+        modelUrl = '/models/components/led_5mm_red.glb';
+        break;
+      case 'BULB_INCANDESCENT':
+        modelUrl = '/models/components/bulb_incandescent.glb';
+        break;
+      case 'BATTERY_9V':
+        modelUrl = '/models/power/battery_9v.glb';
+        break;
+      case 'POTENTIOMETER':
+        modelUrl = '/models/components/potentiometer_10k.glb';
+        break;
+      case 'SPEAKER':
+        modelUrl = '/models/components/speaker_8ohm.glb';
+        break;
+      case 'SWITCH_TACTILE':
+        modelUrl = '/models/components/button_tactile_6mm.glb';
+        break;
+      case 'CAPACITOR_ELECTROLYTIC':
+        modelUrl = '/models/components/capacitor_electrolytic.glb';
+        break;
+      case 'DIP8_555':
+        modelUrl = '/models/components/dip8_ic.glb';
+        break;
+    }
+
+    if (modelUrl) {
+      loadModelPrefab(
+        modelUrl,
+        (clone) => {
+          clone.traverse((c) => {
+            if ((c as THREE.Mesh).isMesh) {
+              (c as THREE.Mesh).material = new THREE.MeshStandardMaterial({
+                color: 0x06b6d4,
+                transparent: true,
+                opacity: 0.65,
+                roughness: 0.3,
+                emissive: 0x0891b2,
+                emissiveIntensity: 0.3,
+              });
+            }
+          });
+          ghost.add(clone);
+        },
+        () => {
+          const fallback = new THREE.Mesh(
+            new THREE.BoxGeometry(0.015, 0.008, 0.008),
+            new THREE.MeshStandardMaterial({
+              color: 0x06b6d4,
+              transparent: true,
+              opacity: 0.65,
+            })
+          );
+          ghost.add(fallback);
+        }
+      );
+    }
+  }, [placingComponent]);
 
   // 3. Render Permanent Jumper Wires & DMM Physical Leads (Flicker-Free Diffing)
   useEffect(() => {
@@ -692,7 +971,7 @@ export default function CircuitWorkbench3D({
       dmmLeadsRef.current.redHole = multimeter.redProbeHoleId;
 
       if (multimeter.redProbeHoleId) {
-        const pos = getHolePosition(multimeter.redProbeHoleId);
+        const pos = getHolePosition(multimeter.redProbeHoleId, components);
         if (pos) {
           const redGroup = new THREE.Group();
           const pinPos = new THREE.Vector3(pos[0], pos[2], pos[1]);
@@ -735,7 +1014,7 @@ export default function CircuitWorkbench3D({
       dmmLeadsRef.current.blackHole = multimeter.blackProbeHoleId;
 
       if (multimeter.blackProbeHoleId) {
-        const pos = getHolePosition(multimeter.blackProbeHoleId);
+        const pos = getHolePosition(multimeter.blackProbeHoleId, components);
         if (pos) {
           const blackGroup = new THREE.Group();
           const pinPos = new THREE.Vector3(pos[0], pos[2], pos[1]);
@@ -763,7 +1042,7 @@ export default function CircuitWorkbench3D({
         }
       }
     }
-  }, [wires, selectedWireId, multimeter.redProbeHoleId, multimeter.blackProbeHoleId]);
+  }, [wires, selectedWireId, multimeter.redProbeHoleId, multimeter.blackProbeHoleId, components]);
 
   // 4. Mouse Handlers: Orbit, Panning, Real-Time Wire Stretching, and Component Placement
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -809,18 +1088,38 @@ export default function CircuitWorkbench3D({
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(mouse, cameraRef.current);
 
-    // Breadboard horizontal surface plane (Y = 0.0085)
+    // 1. Raycast priority for battery snap terminals (+ and -)
+    let hoveredTerminalId: string | null = null;
+    let hoveredTerminalName = '';
+    let terminalWorldPos: THREE.Vector3 | null = null;
+
+    if (batteryTerminalsRef.current.length > 0) {
+      const termHits = raycaster.intersectObjects(batteryTerminalsRef.current, false);
+      if (termHits.length > 0) {
+        const hit = termHits[0].object;
+        hoveredTerminalId = hit.userData.terminalId;
+        hoveredTerminalName = hit.userData.name || 'Battery Terminal';
+        terminalWorldPos = new THREE.Vector3();
+        hit.getWorldPosition(terminalWorldPos);
+      }
+    }
+
+    // 2. Breadboard horizontal surface plane (Y = 0.0085)
     const breadboardPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.0085);
     const planeIntersect = new THREE.Vector3();
     raycaster.ray.intersectPlane(breadboardPlane, planeIntersect);
 
-    // Find nearest hole to cursor
-    const nearestHole = findNearestHole(planeIntersect.x, planeIntersect.z, 0.009);
-    setHoveredHoleId(nearestHole ? nearestHole.id : null);
+    // Find nearest hole to cursor (tight 4mm threshold so it snaps only to real socket openings)
+    const nearestHole = hoveredTerminalId ? null : findNearestHole(planeIntersect.x, planeIntersect.z, 0.004);
+    const activeTargetId = hoveredTerminalId || (nearestHole ? nearestHole.id : null);
+    setHoveredHoleId(activeTargetId);
 
     // Snap Ring Positioning
     if (snapRingMeshRef.current) {
-      if (nearestHole) {
+      if (terminalWorldPos) {
+        snapRingMeshRef.current.position.set(terminalWorldPos.x, terminalWorldPos.y + 0.003, terminalWorldPos.z);
+        snapRingMeshRef.current.visible = true;
+      } else if (nearestHole) {
         snapRingMeshRef.current.position.set(nearestHole.x, 0.0088, nearestHole.y);
         snapRingMeshRef.current.visible = true;
       } else {
@@ -830,22 +1129,24 @@ export default function CircuitWorkbench3D({
 
     // A. Dynamic Wire Stretching Preview
     if (wiringStartHole) {
-      const p1Coords = getHolePosition(wiringStartHole);
+      const p1Coords = getHolePosition(wiringStartHole, components);
       if (p1Coords) {
         const p1 = new THREE.Vector3(p1Coords[0], p1Coords[2], p1Coords[1]);
-        const p2 = nearestHole
-          ? new THREE.Vector3(nearestHole.x, nearestHole.z, nearestHole.y)
+        const p2 = terminalWorldPos
+          ? terminalWorldPos.clone()
+          : nearestHole
+          ? new THREE.Vector3(nearestHole.x, 0.0088, nearestHole.y)
           : planeIntersect.clone();
 
         const dist = p1.distanceTo(p2);
         const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
-        mid.y += Math.max(0.01, Math.min(0.03, dist * 0.4));
+        mid.y = Math.max(p1.y, p2.y) + Math.max(0.008, Math.min(0.045, dist * 0.45));
 
         const curve = new THREE.CatmullRomCurve3([
           p1,
-          new THREE.Vector3(p1.x, p1.y + 0.006, p1.z),
+          new THREE.Vector3(p1.x, p1.y + 0.008, p1.z),
           mid,
-          new THREE.Vector3(p2.x, p2.y + 0.006, p2.z),
+          new THREE.Vector3(p2.x, p2.y + 0.008, p2.z),
           p2,
         ]);
 
@@ -854,7 +1155,7 @@ export default function CircuitWorkbench3D({
           previewWireMeshRef.current.geometry.dispose();
         }
 
-        const previewGeo = new THREE.TubeGeometry(curve, 24, 0.0013, 8, false);
+        const previewGeo = new THREE.TubeGeometry(curve, 28, 0.0013, 8, false);
         const previewMat = new THREE.MeshStandardMaterial({
           color: wireColor,
           emissive: wireColor,
@@ -866,9 +1167,9 @@ export default function CircuitWorkbench3D({
         previewWireMeshRef.current = previewMesh;
 
         setStatusMessage(
-          nearestHole
-            ? `Connect Wire: ${wiringStartHole} ➔ ${nearestHole.id} (Click to attach)`
-            : `Stretching Wire from ${wiringStartHole}... Click target pin`
+          activeTargetId
+            ? `Connect Wire: ${wiringStartHole} ➔ ${activeTargetId} (Click to attach)`
+            : `Stretching Wire from ${wiringStartHole}... Hover over target hole or battery terminal`
         );
       }
       return;
@@ -878,6 +1179,21 @@ export default function CircuitWorkbench3D({
     if (placingComponent && ghostGroupRef.current) {
       const ghost = ghostGroupRef.current;
       ghost.visible = true;
+
+      if (placingComponent.type === 'BATTERY_9V') {
+        // Battery rests outside breadboard on ESD bench mat (Y = 0)
+        const benchMatPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const matIntersect = new THREE.Vector3();
+        raycaster.ray.intersectPlane(benchMatPlane, matIntersect);
+
+        ghost.position.set(matIntersect.x, 0, matIntersect.z);
+        ghost.rotation.set(0, (placementRotationDeg * Math.PI) / 180, 0);
+
+        setStatusMessage(
+          `Place 9V Battery on Bench Mat outside breadboard • Press 'R' to Rotate • Click to Place`
+        );
+        return;
+      }
 
       if (nearestHole) {
         const fp = getComponentFootprint(
@@ -910,11 +1226,29 @@ export default function CircuitWorkbench3D({
 
     // Default HUD Message
     if (activeTool === 'WIRE') {
-      setStatusMessage('Wire Tool: Click any hole to begin stretching a jumper wire');
+      if (hoveredTerminalId) {
+        setStatusMessage(`${hoveredTerminalName} • Click to start jumper wire`);
+      } else if (nearestHole) {
+        setStatusMessage(`${getHoleDescription(nearestHole.id)} • Click to start jumper wire`);
+      } else {
+        setStatusMessage('Wire Tool: Click any hole or battery terminal to stretch wire');
+      }
     } else if (activeProbe) {
-      setStatusMessage(`Click pin to attach Multimeter ${activeProbe} Probe`);
+      if (hoveredTerminalId) {
+        setStatusMessage(`Click to attach Multimeter ${activeProbe} Probe to ${hoveredTerminalName}`);
+      } else if (nearestHole) {
+        setStatusMessage(`Click to attach Multimeter ${activeProbe} Probe to ${nearestHole.id}`);
+      } else {
+        setStatusMessage(`Click pin or terminal to attach Multimeter ${activeProbe} Probe`);
+      }
     } else {
-      setStatusMessage(nearestHole ? `Hole ${nearestHole.id}` : '');
+      if (hoveredTerminalId) {
+        setStatusMessage(hoveredTerminalName);
+      } else if (nearestHole) {
+        setStatusMessage(getHoleDescription(nearestHole.id));
+      } else {
+        setStatusMessage('');
+      }
     }
   };
 
@@ -934,6 +1268,15 @@ export default function CircuitWorkbench3D({
 
   // Click Handler: Place Component, Stretch Wire, Attach Probe, or Select Object
   const handleClick = (e: React.MouseEvent) => {
+    if (!containerRef.current || !cameraRef.current || !sceneRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const mouse = new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1
+    );
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, cameraRef.current);
+
     // 1. Probe Attachment
     if (activeProbe && hoveredHoleId) {
       audioEngine.playSnapSound();
@@ -942,24 +1285,44 @@ export default function CircuitWorkbench3D({
     }
 
     // 2. Component Placement Mode
-    if (placingComponent && hoveredHoleId) {
-      const fp = getComponentFootprint(
-        placingComponent.type,
-        hoveredHoleId,
-        placementRotationDeg
-      );
-      if (fp.isValid && fp.holeIds.length > 0) {
+    if (placingComponent) {
+      if (placingComponent.type === 'BATTERY_9V') {
+        const benchMatPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const matIntersect = new THREE.Vector3();
+        raycaster.ray.intersectPlane(benchMatPlane, matIntersect);
+
         audioEngine.playSnapSound();
         onPlaceComponent(
-          placingComponent.type,
-          fp.holeIds,
+          'BATTERY_9V',
+          [],
           placementRotationDeg,
-          placingComponent.defaultValue
+          9,
+          [matIntersect.x, matIntersect.z, 0]
         );
         setHoveredTargetHoles([]);
         if (ghostGroupRef.current) ghostGroupRef.current.visible = false;
+        return;
       }
-      return;
+
+      if (hoveredHoleId) {
+        const fp = getComponentFootprint(
+          placingComponent.type,
+          hoveredHoleId,
+          placementRotationDeg
+        );
+        if (fp.isValid && fp.holeIds.length > 0) {
+          audioEngine.playSnapSound();
+          onPlaceComponent(
+            placingComponent.type,
+            fp.holeIds,
+            placementRotationDeg,
+            placingComponent.defaultValue
+          );
+          setHoveredTargetHoles([]);
+          if (ghostGroupRef.current) ghostGroupRef.current.visible = false;
+        }
+        return;
+      }
     }
 
     // 3. Jumper Wire Tool

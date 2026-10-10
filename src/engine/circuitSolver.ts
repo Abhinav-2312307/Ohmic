@@ -61,11 +61,24 @@ export function solveCircuit(
     netRoots.add(uf.find(hole.id));
   });
 
+  // Also ensure component pin nodes (such as battery terminals) and wire endpoints are included in netRoots
+  components.forEach((comp) => {
+    comp.pins.forEach((pin) => {
+      if (pin.connectedHoleId) {
+        netRoots.add(uf.find(pin.connectedHoleId));
+      }
+    });
+  });
+  wires.forEach((wire) => {
+    if (wire.startHoleId) netRoots.add(uf.find(wire.startHoleId));
+    if (wire.endHoleId) netRoots.add(uf.find(wire.endHoleId));
+  });
+
   // Find preferred ground: negative terminal of power sources or negative rails
   let groundRoot = '';
   for (const comp of components) {
     if (comp.type === 'BATTERY_9V' || comp.type === 'DC_SOURCE') {
-      const negPin = comp.pins.find((p) => p.name === 'NEGATIVE' || p.name === '-');
+      const negPin = comp.pins.find((p) => p.name === 'NEGATIVE' || p.name === '-' || p.id === 'neg');
       if (negPin?.connectedHoleId) {
         groundRoot = uf.find(negPin.connectedHoleId);
         break;
@@ -104,12 +117,14 @@ export function solveCircuit(
     if (comp.health === 'BURNED_OUT') return;
 
     if (comp.type === 'BATTERY_9V' || comp.type === 'DC_SOURCE') {
-      const pPin = comp.pins.find((p) => p.name === '+' || p.name === 'POSITIVE');
-      const nPin = comp.pins.find((p) => p.name === '-' || p.name === 'NEGATIVE');
+      const pPin = comp.pins.find((p) => p.name === '+' || p.name === 'POSITIVE' || p.id === 'pos');
+      const nPin = comp.pins.find((p) => p.name === '-' || p.name === 'NEGATIVE' || p.id === 'neg');
 
       if (pPin?.connectedHoleId && nPin?.connectedHoleId) {
-        const nodePos = rootToNodeId.get(uf.find(pPin.connectedHoleId)) ?? 0;
-        const nodeNeg = rootToNodeId.get(uf.find(nPin.connectedHoleId)) ?? 0;
+        const rootPos = uf.find(pPin.connectedHoleId);
+        const rootNeg = uf.find(nPin.connectedHoleId);
+        const nodePos = rootToNodeId.get(rootPos) ?? 0;
+        const nodeNeg = rootToNodeId.get(rootNeg) ?? 0;
 
         vSources.push({
           nodePos,
@@ -264,13 +279,31 @@ export function solveCircuit(
     nodeVoltages.set(i, x[i - 1] || 0);
   }
 
+  // Helper to extract voltage for any hole or component pin ID
+  const getNodeVoltage = (pinOrHoleId?: string): number => {
+    if (!pinOrHoleId) return 0;
+    const root = uf.find(pinOrHoleId);
+    const nId = rootToNodeId.get(root) ?? 0;
+    return nodeVoltages.get(nId) ?? 0;
+  };
+
   // Map voltages back to every breadboard hole
   const holeVoltages = new Map<string, number>();
   BREADBOARD_HOLES.forEach((hole) => {
-    const root = uf.find(hole.id);
-    const nId = rootToNodeId.get(root) ?? 0;
-    const volt = nodeVoltages.get(nId) ?? 0;
-    holeVoltages.set(hole.id, volt);
+    holeVoltages.set(hole.id, getNodeVoltage(hole.id));
+  });
+
+  // Also map voltages for all component pins and wire endpoints
+  components.forEach((c) => {
+    c.pins.forEach((p) => {
+      if (p.connectedHoleId) {
+        holeVoltages.set(p.connectedHoleId, getNodeVoltage(p.connectedHoleId));
+      }
+    });
+  });
+  wires.forEach((w) => {
+    if (w.startHoleId) holeVoltages.set(w.startHoleId, getNodeVoltage(w.startHoleId));
+    if (w.endHoleId) holeVoltages.set(w.endHoleId, getNodeVoltage(w.endHoleId));
   });
 
   // Update component states (voltages, currents, power, temperature, health)

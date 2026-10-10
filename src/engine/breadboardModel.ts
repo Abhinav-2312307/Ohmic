@@ -1,4 +1,4 @@
-import { BreadboardHole } from './componentTypes';
+import { BreadboardHole, CircuitComponent } from './componentTypes';
 
 export const PITCH = 0.00254; // 2.54 mm (0.1 inch standard pitch)
 export const TOTAL_COLUMNS = 63;
@@ -124,14 +124,45 @@ export function generateBreadboardHoles(): Map<string, BreadboardHole> {
 
 export const BREADBOARD_HOLES = generateBreadboardHoles();
 
-// Fast coordinate lookup for any pin (returns [x, y, z] in breadboard model units)
-export function getHolePosition(holeId: string): [number, number, number] | null {
-  const hole = BREADBOARD_HOLES.get(holeId);
-  return hole ? [hole.x, hole.y, hole.z] : null;
+// Coordinate lookup for either breadboard holes or external battery/component terminal pins
+export function getTerminalOrHolePosition(
+  id: string,
+  components?: CircuitComponent[]
+): [number, number, number] | null {
+  if (BREADBOARD_HOLES.has(id)) {
+    const hole = BREADBOARD_HOLES.get(id)!;
+    return [hole.x, hole.y, hole.z];
+  }
+
+  // Battery terminal format: "componentId:terminal" (e.g. "batt_1:pos", "batt_1:neg")
+  if (id.includes(':') && components) {
+    const [compId, terminal] = id.split(':');
+    const comp = components.find((c) => c.id === compId);
+    if (comp) {
+      if (comp.type === 'BATTERY_9V') {
+        const isPos = terminal === 'pos' || terminal === '+';
+        const sign = isPos ? 1 : -1;
+        const rotY = comp.rotation ? comp.rotation[1] : 0;
+        const offsetX = sign * 0.0064 * Math.cos(rotY);
+        const offsetZ = sign * 0.0064 * Math.sin(rotY);
+        const termX = comp.position[0] + offsetX;
+        const termY = comp.position[1] + offsetZ;
+        const termZ = 0.048; // Top terminal height in meters
+        return [termX, termY, termZ];
+      }
+    }
+  }
+
+  return null;
+}
+
+// Fast coordinate lookup for any pin or terminal
+export function getHolePosition(holeId: string, components?: CircuitComponent[]): [number, number, number] | null {
+  return getTerminalOrHolePosition(holeId, components);
 }
 
 // Find nearest breadboard hole given Three.js world coordinates (x, z)
-export function findNearestHole(threeX: number, threeZ: number, maxDist: number = 0.008): { id: string; x: number; y: number; z: number } | null {
+export function findNearestHole(threeX: number, threeZ: number, maxDist: number = 0.004): { id: string; x: number; y: number; z: number } | null {
   let nearestId: string | null = null;
   let minDistSq = maxDist * maxDist;
 
@@ -149,6 +180,44 @@ export function findNearestHole(threeX: number, threeZ: number, maxDist: number 
   if (!nearestId) return null;
   const h = BREADBOARD_HOLES.get(nearestId)!;
   return { id: h.id, x: h.x, y: h.y, z: h.z };
+}
+
+// Human-readable electrical connection details for HUD
+export function getHoleDescription(holeId: string): string {
+  if (holeId.startsWith('TOP_POS')) {
+    const num = holeId.replace('TOP_POS_', '');
+    return `Top Positive Rail (+) Pin ${num} • (Continuous Power Bus)`;
+  }
+  if (holeId.startsWith('TOP_NEG')) {
+    const num = holeId.replace('TOP_NEG_', '');
+    return `Top Ground Rail (-) Pin ${num} • (Continuous Ground Bus)`;
+  }
+  if (holeId.startsWith('BOT_POS')) {
+    const num = holeId.replace('BOT_POS_', '');
+    return `Bottom Positive Rail (+) Pin ${num} • (Continuous Power Bus)`;
+  }
+  if (holeId.startsWith('BOT_NEG')) {
+    const num = holeId.replace('BOT_NEG_', '');
+    return `Bottom Ground Rail (-) Pin ${num} • (Continuous Ground Bus)`;
+  }
+  const match = holeId.match(/^([A-J])(\d+)$/);
+  if (match) {
+    const row = match[1];
+    const col = match[2];
+    const isUpper = ['A', 'B', 'C', 'D', 'E'].includes(row);
+    if (isUpper) {
+      return `Hole ${holeId} • Col ${col} (Internally connected to A${col}, B${col}, C${col}, D${col}, E${col})`;
+    } else {
+      return `Hole ${holeId} • Col ${col} (Internally connected to F${col}, G${col}, H${col}, I${col}, J${col})`;
+    }
+  }
+  if (holeId.includes(':pos') || holeId.includes(':+')) {
+    return `9V Battery Positive Snap Terminal (+) • +9.0V DC`;
+  }
+  if (holeId.includes(':neg') || holeId.includes(':-')) {
+    return `9V Battery Negative Snap Terminal (-) • 0.0V Ground`;
+  }
+  return `Hole ${holeId}`;
 }
 
 // Determine target pins for component placement given a starting anchor hole and rotation angle (0 or 90 deg)
@@ -263,8 +332,8 @@ export function getComponentFootprint(
     }
 
     case 'BATTERY_9V': {
-      // Direct connection to top rails: Positive & Negative
-      return { holeIds: ['TOP_POS_5', 'TOP_NEG_5'], isValid: true };
+      // 9V Battery rests outside the board on the bench mat; connect wires to its snap terminals
+      return { holeIds: [], isValid: true };
     }
   }
 

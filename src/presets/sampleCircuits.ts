@@ -10,11 +10,17 @@ export interface PresetCircuit {
 }
 
 export function getPresetCircuits(): PresetCircuit[] {
+  // Common 9V battery off-board position on the ESD bench mat
+  const battX = -0.06;
+  const battZ = 0.055;
+  const battPosTerm: [number, number, number] = [battX + 0.0064, battZ, 0.048];
+  const battNegTerm: [number, number, number] = [battX - 0.0064, battZ, 0.048];
+
   return [
     {
       id: 'led_basic',
       title: '1. Basic LED & Current Limiting Resistor',
-      description: '9V Battery powering a 5mm Red LED protected by a 1kΩ resistor. Demonstrates Ohm’s law, forward voltage (1.9V), and safe 7.1mA operating current.',
+      description: '9V Battery on the bench mat wired to the breadboard rails. Power feeds a 1kΩ resistor in column 15 and a 5mm Red LED in columns 19–20. Demonstrates Ohm’s law and breadboard internal terminal clips.',
       components: [
         {
           id: 'batt_1',
@@ -22,7 +28,7 @@ export function getPresetCircuits(): PresetCircuit[] {
           name: '9V Alkaline Battery',
           value: 9,
           unit: 'V',
-          position: [-0.07, -0.04, 0.025],
+          position: [battX, battZ, 0.0],
           rotation: [0, 0, 0],
           modelUrl: '/models/power/battery_9v.glb',
           voltageDrop: 9,
@@ -31,8 +37,8 @@ export function getPresetCircuits(): PresetCircuit[] {
           temperature: 25,
           health: 'NORMAL',
           pins: [
-            { id: 'p1', name: '+', relativePos: [0.0064, 0, 0.025], connectedHoleId: 'TOP_POS_5' },
-            { id: 'p2', name: '-', relativePos: [-0.0064, 0, 0.025], connectedHoleId: 'TOP_NEG_5' },
+            { id: 'pos', name: '+', relativePos: [0.0064, 0, 0.048], connectedHoleId: 'batt_1:pos' },
+            { id: 'neg', name: '-', relativePos: [-0.0064, 0, 0.048], connectedHoleId: 'batt_1:neg' },
           ],
         },
         {
@@ -78,6 +84,29 @@ export function getPresetCircuits(): PresetCircuit[] {
         },
       ],
       wires: [
+        // Jumper Wire 1: Battery Positive snap stud -> Breadboard Top Positive Rail
+        {
+          id: 'w_batt_pos',
+          startHoleId: 'batt_1:pos',
+          endHoleId: 'TOP_POS_10',
+          startPos: battPosTerm,
+          endPos: getHolePosition('TOP_POS_10') || [0, 0, 0],
+          color: '#ef4444', // Red
+          current: 0,
+          voltage: 0,
+        },
+        // Jumper Wire 2: Battery Negative snap stud -> Breadboard Top Ground Rail
+        {
+          id: 'w_batt_neg',
+          startHoleId: 'batt_1:neg',
+          endHoleId: 'TOP_NEG_10',
+          startPos: battNegTerm,
+          endPos: getHolePosition('TOP_NEG_10') || [0, 0, 0],
+          color: '#18181b', // Black
+          current: 0,
+          voltage: 0,
+        },
+        // Jumper Wire 3: Top Positive Rail -> Column 15 (feeding Resistor Pin 1 at E15)
         {
           id: 'w1',
           startHoleId: 'TOP_POS_15',
@@ -88,13 +117,14 @@ export function getPresetCircuits(): PresetCircuit[] {
           current: 0,
           voltage: 0,
         },
+        // Jumper Wire 4: Column 20 (LED Cathode at D20) -> Top Ground Rail
         {
           id: 'w2',
           startHoleId: 'A20',
           endHoleId: 'TOP_NEG_20',
           startPos: getHolePosition('A20') || [0, 0, 0],
           endPos: getHolePosition('TOP_NEG_20') || [0, 0, 0],
-          color: '#1d3557', // Dark Blue / Black
+          color: '#2563eb', // Blue
           current: 0,
           voltage: 0,
         },
@@ -111,7 +141,7 @@ export function getPresetCircuits(): PresetCircuit[] {
           name: '9V Battery',
           value: 9,
           unit: 'V',
-          position: [-0.07, -0.04, 0.025],
+          position: [battX, battZ, 0.0],
           rotation: [0, 0, 0],
           modelUrl: '/models/power/battery_9v.glb',
           voltageDrop: 9,
@@ -120,15 +150,15 @@ export function getPresetCircuits(): PresetCircuit[] {
           temperature: 25,
           health: 'NORMAL',
           pins: [
-            { id: 'p1', name: '+', relativePos: [0.0064, 0, 0.025], connectedHoleId: 'TOP_POS_5' },
-            { id: 'p2', name: '-', relativePos: [-0.0064, 0, 0.025], connectedHoleId: 'TOP_NEG_5' },
+            { id: 'pos', name: '+', relativePos: [0.0064, 0, 0.048], connectedHoleId: 'batt_pot:pos' },
+            { id: 'neg', name: '-', relativePos: [-0.0064, 0, 0.048], connectedHoleId: 'batt_pot:neg' },
           ],
         },
         {
           id: 'pot_1',
           type: 'POTENTIOMETER',
           name: '10kΩ Rotary Potentiometer',
-          value: 100, // Low resistance setting for high brightness
+          value: 100,
           unit: 'Ω',
           position: [-0.02, 0.012, 0.015],
           rotation: [0, 0, 0],
@@ -166,6 +196,26 @@ export function getPresetCircuits(): PresetCircuit[] {
         },
       ],
       wires: [
+        {
+          id: 'wp_b1',
+          startHoleId: 'batt_pot:pos',
+          endHoleId: 'TOP_POS_10',
+          startPos: battPosTerm,
+          endPos: getHolePosition('TOP_POS_10') || [0, 0, 0],
+          color: '#ef4444',
+          current: 0,
+          voltage: 0,
+        },
+        {
+          id: 'wp_b2',
+          startHoleId: 'batt_pot:neg',
+          endHoleId: 'TOP_NEG_10',
+          startPos: battNegTerm,
+          endPos: getHolePosition('TOP_NEG_10') || [0, 0, 0],
+          color: '#18181b',
+          current: 0,
+          voltage: 0,
+        },
         {
           id: 'wp1',
           startHoleId: 'TOP_POS_10',
@@ -209,7 +259,7 @@ export function getPresetCircuits(): PresetCircuit[] {
           name: '9V Battery',
           value: 9,
           unit: 'V',
-          position: [-0.07, -0.04, 0.025],
+          position: [battX, battZ, 0.0],
           rotation: [0, 0, 0],
           modelUrl: '/models/power/battery_9v.glb',
           voltageDrop: 9,
@@ -218,8 +268,8 @@ export function getPresetCircuits(): PresetCircuit[] {
           temperature: 25,
           health: 'NORMAL',
           pins: [
-            { id: 'p1', name: '+', relativePos: [0.0064, 0, 0.025], connectedHoleId: 'TOP_POS_5' },
-            { id: 'p2', name: '-', relativePos: [-0.0064, 0, 0.025], connectedHoleId: 'TOP_NEG_5' },
+            { id: 'pos', name: '+', relativePos: [0.0064, 0, 0.048], connectedHoleId: 'batt_burn:pos' },
+            { id: 'neg', name: '-', relativePos: [-0.0064, 0, 0.048], connectedHoleId: 'batt_burn:neg' },
           ],
         },
         {
@@ -244,6 +294,26 @@ export function getPresetCircuits(): PresetCircuit[] {
         },
       ],
       wires: [
+        {
+          id: 'wb_b1',
+          startHoleId: 'batt_burn:pos',
+          endHoleId: 'TOP_POS_10',
+          startPos: battPosTerm,
+          endPos: getHolePosition('TOP_POS_10') || [0, 0, 0],
+          color: '#ef4444',
+          current: 0,
+          voltage: 0,
+        },
+        {
+          id: 'wb_b2',
+          startHoleId: 'batt_burn:neg',
+          endHoleId: 'TOP_NEG_10',
+          startPos: battNegTerm,
+          endPos: getHolePosition('TOP_NEG_10') || [0, 0, 0],
+          color: '#18181b',
+          current: 0,
+          voltage: 0,
+        },
         {
           id: 'wb1',
           startHoleId: 'TOP_POS_15',
@@ -277,7 +347,7 @@ export function getPresetCircuits(): PresetCircuit[] {
           name: '9V Battery',
           value: 9,
           unit: 'V',
-          position: [-0.07, -0.04, 0.025],
+          position: [battX, battZ, 0.0],
           rotation: [0, 0, 0],
           modelUrl: '/models/power/battery_9v.glb',
           voltageDrop: 9,
@@ -286,8 +356,8 @@ export function getPresetCircuits(): PresetCircuit[] {
           temperature: 25,
           health: 'NORMAL',
           pins: [
-            { id: 'p1', name: '+', relativePos: [0.0064, 0, 0.025], connectedHoleId: 'TOP_POS_5' },
-            { id: 'p2', name: '-', relativePos: [-0.0064, 0, 0.025], connectedHoleId: 'TOP_NEG_5' },
+            { id: 'pos', name: '+', relativePos: [0.0064, 0, 0.048], connectedHoleId: 'batt_spk:pos' },
+            { id: 'neg', name: '-', relativePos: [-0.0064, 0, 0.048], connectedHoleId: 'batt_spk:neg' },
           ],
         },
         {
@@ -331,6 +401,26 @@ export function getPresetCircuits(): PresetCircuit[] {
         },
       ],
       wires: [
+        {
+          id: 'wsp_b1',
+          startHoleId: 'batt_spk:pos',
+          endHoleId: 'TOP_POS_18',
+          startPos: battPosTerm,
+          endPos: getHolePosition('TOP_POS_18') || [0, 0, 0],
+          color: '#ef4444',
+          current: 0,
+          voltage: 0,
+        },
+        {
+          id: 'wsp_b2',
+          startHoleId: 'batt_spk:neg',
+          endHoleId: 'TOP_NEG_18',
+          startPos: battNegTerm,
+          endPos: getHolePosition('TOP_NEG_18') || [0, 0, 0],
+          color: '#18181b',
+          current: 0,
+          voltage: 0,
+        },
         {
           id: 'ws1',
           startHoleId: 'TOP_POS_18',
