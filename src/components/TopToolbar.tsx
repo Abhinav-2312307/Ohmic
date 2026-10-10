@@ -16,6 +16,7 @@ import {
   Trash2,
   SlidersHorizontal,
   ChevronDown,
+  Keyboard,
 } from 'lucide-react';
 import { getPresetCircuits, PresetCircuit } from '../presets/sampleCircuits';
 
@@ -36,11 +37,12 @@ interface TopToolbarProps {
 
   activeTool: WorkbenchTool;
   onSelectTool: (tool: WorkbenchTool) => void;
-  onRotateSelected?: () => void;
+  onRotateSelected?: (direction: 'CW' | 'CCW') => void;
   onDeleteSelected?: () => void;
   hasSelection?: boolean;
   isDrawerOpen: boolean;
   onToggleDrawer: () => void;
+  onOpenControlsGuide?: () => void;
 }
 
 export const WIRE_COLORS = [
@@ -72,6 +74,7 @@ export default function TopToolbar({
   hasSelection,
   isDrawerOpen,
   onToggleDrawer,
+  onOpenControlsGuide,
 }: TopToolbarProps) {
   const presets = getPresetCircuits();
 
@@ -194,16 +197,27 @@ export default function TopToolbar({
           ))}
         </div>
 
-        {/* Rotate Action (if component selected) */}
+        {/* Dual-Direction Rotate Action (if component selected) */}
         {hasSelection && onRotateSelected && (
-          <button
-            onClick={onRotateSelected}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-mono text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800/60 transition-all"
-            title="Rotate 90° (R)"
-          >
-            <RotateCw className="w-3.5 h-3.5 text-amber-400" />
-            <span>ROTATE</span>
-          </button>
+          <div className="flex items-center bg-zinc-950/70 rounded-lg p-0.5 border border-white/[0.08]">
+            <button
+              onClick={() => onRotateSelected('CCW')}
+              className="flex items-center gap-1 px-2 py-1 rounded text-xs font-mono text-zinc-300 hover:text-amber-300 hover:bg-zinc-800 transition-all"
+              title="Rotate Counter-Clockwise 90° (← Arrow Key)"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+              <span>←</span>
+            </button>
+            <div className="w-px h-3 bg-white/[0.1] mx-0.5" />
+            <button
+              onClick={() => onRotateSelected('CW')}
+              className="flex items-center gap-1 px-2 py-1 rounded text-xs font-mono text-zinc-300 hover:text-amber-300 hover:bg-zinc-800 transition-all"
+              title="Rotate Clockwise 90° (→ Arrow Key or R)"
+            >
+              <RotateCw className="w-3.5 h-3.5 text-amber-400" />
+              <span>→ (R)</span>
+            </button>
+          </div>
         )}
 
         {/* Delete Action (if component or wire selected) */}
@@ -215,6 +229,18 @@ export default function TopToolbar({
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>DELETE</span>
+          </button>
+        )}
+
+        {/* Controls Guide Quick Button */}
+        {onOpenControlsGuide && (
+          <button
+            onClick={onOpenControlsGuide}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono text-zinc-300 hover:text-amber-300 hover:bg-zinc-800/80 border border-white/[0.06] transition-all ml-1"
+            title="Open Controls & Shortcuts Guide (? / H)"
+          >
+            <Keyboard className="w-3.5 h-3.5 text-amber-400" />
+            <span>CONTROLS</span>
           </button>
         )}
       </div>

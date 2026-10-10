@@ -26,8 +26,15 @@ import {
 } from '../engine/componentTypes';
 import { solveCircuit } from '../engine/circuitSolver';
 import { getPresetCircuits, PresetCircuit } from '../presets/sampleCircuits';
-import { getHolePosition, BREADBOARD_HOLES } from '../engine/breadboardModel';
+import {
+  getHolePosition,
+  BREADBOARD_HOLES,
+  rotateComponent,
+  nudgeComponent,
+  updateWiresForComponent,
+} from '../engine/breadboardModel';
 import { audioEngine } from '../engine/audioEngine';
+import ControlsGuideModal from '../components/ControlsGuideModal';
 import { Gauge, Activity } from 'lucide-react';
 
 export default function OhmicWorkbenchPage() {
@@ -52,6 +59,7 @@ export default function OhmicWorkbenchPage() {
   const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null);
   const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isControlsGuideOpen, setIsControlsGuideOpen] = useState(false);
 
   // Virtual Instruments State
   const [activeProbe, setActiveProbe] = useState<'RED' | 'BLACK' | null>(null);
@@ -87,20 +95,49 @@ export default function OhmicWorkbenchPage() {
     return () => clearInterval(interval);
   }, [components, wires, multimeter, ambientTemperature, isSimulating]);
 
-  // Rotation Handler
-  const handleRotateSelected = useCallback(() => {
-    if (!selectedComponentId) return;
-    setComponents((prev) =>
-      prev.map((c) => {
-        if (c.id === selectedComponentId) {
-          const currentRotY = c.rotation[1];
-          const newRotY = (currentRotY + Math.PI / 2) % (Math.PI * 2);
-          return { ...c, rotation: [c.rotation[0], newRotY, c.rotation[2]] };
-        }
-        return c;
-      })
-    );
-  }, [selectedComponentId]);
+  // Rotation Handler (supports CW and CCW with arrow keys and 'R')
+  const handleRotateSelected = useCallback(
+    (dir: 'CW' | 'CCW' = 'CW') => {
+      if (!selectedComponentId) return;
+      audioEngine.playKnobClick();
+      setComponents((prev) => {
+        const comp = prev.find((c) => c.id === selectedComponentId);
+        if (!comp) return prev;
+        const rotated = rotateComponent(comp, dir);
+        const updated = prev.map((c) => (c.id === selectedComponentId ? rotated : c));
+        setWires((prevWires) => updateWiresForComponent(rotated, updated, prevWires));
+        return updated;
+      });
+    },
+    [selectedComponentId]
+  );
+
+  // Movement Handler (step-by-step nudge on breadboard or workbench mat)
+  const handleMoveSelected = useCallback(
+    (deltaCol: number, deltaRow: number) => {
+      if (!selectedComponentId) return;
+      setComponents((prev) => {
+        const comp = prev.find((c) => c.id === selectedComponentId);
+        if (!comp) return prev;
+        const nudged = nudgeComponent(comp, deltaCol, deltaRow);
+        if (!nudged) return prev;
+        audioEngine.playSnapSound();
+        const updated = prev.map((c) => (c.id === selectedComponentId ? nudged : c));
+        setWires((prevWires) => updateWiresForComponent(nudged, updated, prevWires));
+        return updated;
+      });
+    },
+    [selectedComponentId]
+  );
+
+  // Direct move handler for 3D mouse drag
+  const handleMoveComponentDirect = useCallback((id: string, updatedComp: CircuitComponent) => {
+    setComponents((prev) => {
+      const updated = prev.map((c) => (c.id === id ? updatedComp : c));
+      setWires((prevWires) => updateWiresForComponent(updatedComp, updated, prevWires));
+      return updated;
+    });
+  }, []);
 
   // Deletion Handler
   const handleDeleteSelected = useCallback(() => {
@@ -131,11 +168,55 @@ export default function OhmicWorkbenchPage() {
       if (e.code === 'Space') {
         e.preventDefault();
         setIsSimulating((prev) => !prev);
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (selectedComponentId) {
+          if (e.shiftKey) {
+            handleMoveSelected(-1, 0); // Shift+Left: Move column left
+          } else {
+            handleRotateSelected('CCW'); // Left Arrow: Rotate 90° CCW
+          }
+        }
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        if (selectedComponentId) {
+          if (e.shiftKey) {
+            handleMoveSelected(1, 0); // Shift+Right: Move column right
+          } else {
+            handleRotateSelected('CW'); // Right Arrow: Rotate 90° CW
+          }
+        }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (selectedComponentId) {
+          handleMoveSelected(0, 1); // Up Arrow: Move row up
+        }
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (selectedComponentId) {
+          handleMoveSelected(0, -1); // Down Arrow: Move row down
+        }
+      } else if (e.key === 'a' || e.key === 'A') {
+        if (selectedComponentId) {
+          handleMoveSelected(-1, 0);
+        }
+      } else if (e.key === 'd' || e.key === 'D') {
+        if (selectedComponentId) {
+          handleMoveSelected(1, 0);
+        }
+      } else if (e.key === 'w' || e.key === 'W') {
+        if (selectedComponentId) {
+          handleMoveSelected(0, 1);
+        } else {
+          setActiveTool('WIRE');
+          setPlacingComponent(null);
+        }
+      } else if (e.key === 's' || e.key === 'S') {
+        if (selectedComponentId) {
+          handleMoveSelected(0, -1);
+        }
       } else if (e.key === 'v' || e.key === 'V') {
         setActiveTool('SELECT');
-        setPlacingComponent(null);
-      } else if (e.key === 'w' || e.key === 'W') {
-        setActiveTool('WIRE');
         setPlacingComponent(null);
       } else if (e.key === 'c' || e.key === 'C') {
         setIsDrawerOpen((prev) => !prev);
@@ -145,6 +226,8 @@ export default function OhmicWorkbenchPage() {
       } else if (e.key === 'o' || e.key === 'O') {
         audioEngine.playKnobClick();
         setInstrumentTab((prev) => (prev === 'SCOPE' ? 'NONE' : 'SCOPE'));
+      } else if (e.key === '?' || e.key === 'h' || e.key === 'H') {
+        setIsControlsGuideOpen((prev) => !prev);
       } else if (e.key >= '1' && e.key <= '7') {
         const colorIdx = parseInt(e.key) - 1;
         if (WIRE_COLORS[colorIdx]) {
@@ -154,8 +237,7 @@ export default function OhmicWorkbenchPage() {
         }
       } else if (e.key === 'r' || e.key === 'R') {
         if (selectedComponentId) {
-          audioEngine.playKnobClick();
-          handleRotateSelected();
+          handleRotateSelected('CW');
         }
       } else if (e.key === 'Escape') {
         setActiveTool('SELECT');
@@ -163,13 +245,20 @@ export default function OhmicWorkbenchPage() {
         setSelectedComponentId(null);
         setSelectedWireId(null);
         setActiveProbe(null);
+        setIsControlsGuideOpen(false);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         handleDeleteSelected();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedComponentId, selectedWireId, handleRotateSelected, handleDeleteSelected]);
+  }, [
+    selectedComponentId,
+    selectedWireId,
+    handleRotateSelected,
+    handleMoveSelected,
+    handleDeleteSelected,
+  ]);
 
   // Wire creation handler
   const handleAddWire = useCallback(
@@ -400,6 +489,7 @@ export default function OhmicWorkbenchPage() {
         hasSelection={!!(selectedComponentId || selectedWireId)}
         isDrawerOpen={isDrawerOpen}
         onToggleDrawer={() => setIsDrawerOpen(!isDrawerOpen)}
+        onOpenControlsGuide={() => setIsControlsGuideOpen(true)}
       />
 
       {/* Main Full-Screen 3D Workspace */}
@@ -444,6 +534,8 @@ export default function OhmicWorkbenchPage() {
             setSelectedComponentId(null);
             setSelectedWireId(null);
           }}
+          onMoveComponent={handleMoveComponentDirect}
+          onOpenControlsGuide={() => setIsControlsGuideOpen(true)}
         />
 
         {/* Collapsible Left Component Catalog Drawer */}
@@ -479,7 +571,7 @@ export default function OhmicWorkbenchPage() {
             setSelectedWireId(null);
             audioEngine.playPopSound();
           }}
-          onRotateComponent={handleRotateSelected}
+          onRotateComponent={(_id, dir) => handleRotateSelected(dir)}
           onClose={() => {
             setSelectedComponentId(null);
             setSelectedWireId(null);
@@ -550,6 +642,12 @@ export default function OhmicWorkbenchPage() {
           )}
         </div>
       </main>
+
+      {/* Interactive Controls & Shortcuts Guide Modal */}
+      <ControlsGuideModal
+        isOpen={isControlsGuideOpen}
+        onClose={() => setIsControlsGuideOpen(false)}
+      />
     </div>
   );
 }

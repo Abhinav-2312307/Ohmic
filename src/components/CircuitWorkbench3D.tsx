@@ -15,9 +15,11 @@ import {
   findNearestHole,
   getComponentFootprint,
   getHoleDescription,
+  moveComponentToHole,
 } from '../engine/breadboardModel';
 import { WorkbenchTool } from './TopToolbar';
 import { audioEngine } from '../engine/audioEngine';
+import { Keyboard } from 'lucide-react';
 
 interface CircuitWorkbench3DProps {
   components: CircuitComponent[];
@@ -43,6 +45,8 @@ interface CircuitWorkbench3DProps {
   selectedComponentId: string | null;
   selectedWireId: string | null;
   onCancelAction: () => void;
+  onMoveComponent?: (id: string, updatedComp: CircuitComponent) => void;
+  onOpenControlsGuide?: () => void;
 }
 
 interface ComponentRecord {
@@ -269,6 +273,8 @@ export default function CircuitWorkbench3D({
   selectedComponentId,
   selectedWireId,
   onCancelAction,
+  onMoveComponent,
+  onOpenControlsGuide,
 }: CircuitWorkbench3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -300,9 +306,12 @@ export default function CircuitWorkbench3D({
   // Component Placement Ghost Group
   const ghostGroupRef = useRef<THREE.Group | null>(null);
 
-  // Camera Orbit State
+  // Camera Orbit & Component Drag State
   const isDraggingRef = useRef(false);
   const isPanningRef = useRef(false);
+  const isDraggingComponentRef = useRef(false);
+  const draggedCompIdRef = useRef<string | null>(null);
+  const mouseDownPosRef = useRef({ x: 0, y: 0 });
   const prevMouseRef = useRef({ x: 0, y: 0 });
   const cameraTargetRef = useRef<THREE.Vector3 | null>(null);
   const cameraSphericalRef = useRef({ radius: 0.28, theta: Math.PI / 4, phi: Math.PI / 3.2 });
@@ -627,8 +636,11 @@ export default function CircuitWorkbench3D({
         compGroup.rotation.set(comp.rotation[0], comp.rotation[1], comp.rotation[2]);
         compGroup.userData = { componentId: comp.id, isCircuitComponent: true };
 
-        // Selection highlight ring
-        const selRingGeo = new THREE.RingGeometry(0.008, 0.011, 24);
+        // Selection highlight ring (sized appropriately for component)
+        const isBatt = comp.type === 'BATTERY_9V';
+        const selRingGeo = isBatt
+          ? new THREE.RingGeometry(0.018, 0.024, 32)
+          : new THREE.RingGeometry(0.008, 0.012, 24);
         const selRingMat = new THREE.MeshBasicMaterial({
           color: 0xf59e0b,
           side: THREE.DoubleSide,
@@ -638,6 +650,16 @@ export default function CircuitWorkbench3D({
         selRing.position.y = 0.001;
         selRing.visible = comp.id === selectedComponentId;
         compGroup.add(selRing);
+
+        // Invisible Hit-box proxy for reliable selection and dragging
+        const hitBoxGeo = isBatt
+          ? new THREE.BoxGeometry(0.032, 0.054, 0.022)
+          : new THREE.BoxGeometry(0.024, 0.024, 0.016);
+        const hitBoxMat = new THREE.MeshBasicMaterial({ visible: false });
+        const hitBox = new THREE.Mesh(hitBoxGeo, hitBoxMat);
+        hitBox.position.y = isBatt ? 0.025 : 0.008;
+        hitBox.userData = { componentId: comp.id, isHitProxy: true };
+        compGroup.add(hitBox);
 
         // Optional LED / Bulb point light
         let light: THREE.PointLight | undefined;
@@ -1044,14 +1066,55 @@ export default function CircuitWorkbench3D({
     }
   }, [wires, selectedWireId, multimeter.redProbeHoleId, multimeter.blackProbeHoleId, components]);
 
-  // 4. Mouse Handlers: Orbit, Panning, Real-Time Wire Stretching, and Component Placement
+  // 4. Mouse Handlers: Orbit, Panning, Real-Time Wire Stretching, Component Dragging & Placement
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 0) {
-      isDraggingRef.current = true;
-    } else if (e.button === 2) {
-      isPanningRef.current = true;
-    }
+    mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
     prevMouseRef.current = { x: e.clientX, y: e.clientY };
+
+    if (e.button === 2) {
+      isPanningRef.current = true;
+      return;
+    }
+
+    if (e.button !== 0) return;
+
+    // Check if clicking directly on a component in SELECT mode to drag it
+    if (activeTool === 'SELECT' && !wiringStartHole && !placingComponent) {
+      if (containerRef.current && cameraRef.current && sceneRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const mouse = new THREE.Vector2(
+          ((e.clientX - rect.left) / rect.width) * 2 - 1,
+          -((e.clientY - rect.top) / rect.height) * 2 + 1
+        );
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(mouse, cameraRef.current);
+
+        const allObjects: THREE.Object3D[] = [];
+        componentMeshesRef.current.forEach((g) => allObjects.push(g));
+
+        const intersects = raycaster.intersectObjects(allObjects, true);
+        if (intersects.length > 0) {
+          let hit = intersects[0].object;
+          while (hit.parent && !hit.userData.componentId && !hit.userData.wireId) {
+            hit = hit.parent;
+          }
+          if (hit.userData.componentId) {
+            const hitComp = components.find((c) => c.id === hit.userData.componentId);
+            if (hitComp) {
+              isDraggingComponentRef.current = true;
+              draggedCompIdRef.current = hitComp.id;
+              onSelectComponent(hitComp);
+              onSelectWire(null);
+              audioEngine.playKnobClick();
+              return;
+            }
+          }
+        }
+      }
+    }
+
+    // Default: Orbit camera on empty space
+    isDraggingRef.current = true;
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -1059,21 +1122,21 @@ export default function CircuitWorkbench3D({
     const dy = e.clientY - prevMouseRef.current.y;
     prevMouseRef.current = { x: e.clientX, y: e.clientY };
 
-    // Orbit Camera
-    if (isDraggingRef.current && activeTool === 'SELECT' && !wiringStartHole && !placingComponent) {
+    // Pan Camera (Right-click drag)
+    if (isPanningRef.current && cameraTargetRef.current) {
+      cameraTargetRef.current.x -= dx * 0.0003;
+      cameraTargetRef.current.z -= dy * 0.0003;
+      updateCameraPosition();
+      return;
+    }
+
+    // Orbit Camera (Left-drag on empty space)
+    if (isDraggingRef.current && !isDraggingComponentRef.current && activeTool === 'SELECT' && !wiringStartHole && !placingComponent) {
       cameraSphericalRef.current.theta -= dx * 0.008;
       cameraSphericalRef.current.phi = Math.max(
         0.1,
         Math.min(Math.PI / 2 - 0.05, cameraSphericalRef.current.phi + dy * 0.008)
       );
-      updateCameraPosition();
-      return;
-    }
-
-    // Pan Camera (Right-click drag)
-    if (isPanningRef.current && cameraTargetRef.current) {
-      cameraTargetRef.current.x -= dx * 0.0003;
-      cameraTargetRef.current.z -= dy * 0.0003;
       updateCameraPosition();
       return;
     }
@@ -1087,6 +1150,42 @@ export default function CircuitWorkbench3D({
 
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(mouse, cameraRef.current);
+
+    // Dynamic Drag-to-Move for Component
+    if (isDraggingComponentRef.current && draggedCompIdRef.current) {
+      const draggedComp = components.find((c) => c.id === draggedCompIdRef.current);
+      const record = componentRecordsRef.current.get(draggedCompIdRef.current);
+
+      if (draggedComp && record) {
+        if (draggedComp.type === 'BATTERY_9V') {
+          const matPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+          const matIntersect = new THREE.Vector3();
+          raycaster.ray.intersectPlane(matPlane, matIntersect);
+
+          record.group.position.set(matIntersect.x, 0, matIntersect.z);
+          setStatusMessage('Dragging 9V Battery • Release to place on workbench mat • Arrow keys (← / →) to rotate');
+        } else {
+          const bbPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.0085);
+          const bbIntersect = new THREE.Vector3();
+          raycaster.ray.intersectPlane(bbPlane, bbIntersect);
+
+          const nearest = findNearestHole(bbIntersect.x, bbIntersect.z, 0.015);
+          if (nearest) {
+            const rotDeg = Math.round(((draggedComp.rotation ? draggedComp.rotation[1] : 0) * 180) / Math.PI) % 360;
+            const fp = getComponentFootprint(draggedComp.type, nearest.id, rotDeg);
+            if (fp.isValid && fp.holeIds.length > 0) {
+              const p1 = getHolePosition(fp.holeIds[0]);
+              const p2 = getHolePosition(fp.holeIds[fp.holeIds.length - 1]);
+              if (p1 && p2) {
+                record.group.position.set((p1[0] + p2[0]) / 2, 0.012, (p1[1] + p2[1]) / 2);
+              }
+              setStatusMessage(`Moving ${draggedComp.name} ➔ Holes [${fp.holeIds.join(', ')}] • Release to snap`);
+            }
+          }
+        }
+        return;
+      }
+    }
 
     // 1. Raycast priority for battery snap terminals (+ and -)
     let hoveredTerminalId: string | null = null;
@@ -1252,9 +1351,57 @@ export default function CircuitWorkbench3D({
     }
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e: React.MouseEvent) => {
     isDraggingRef.current = false;
     isPanningRef.current = false;
+
+    if (isDraggingComponentRef.current && draggedCompIdRef.current) {
+      const dragDist = Math.hypot(
+        e.clientX - mouseDownPosRef.current.x,
+        e.clientY - mouseDownPosRef.current.y
+      );
+
+      if (dragDist >= 6 && onMoveComponent) {
+        const draggedComp = components.find((c) => c.id === draggedCompIdRef.current);
+        if (draggedComp && containerRef.current && cameraRef.current) {
+          const rect = containerRef.current.getBoundingClientRect();
+          const mouse = new THREE.Vector2(
+            ((e.clientX - rect.left) / rect.width) * 2 - 1,
+            -((e.clientY - rect.top) / rect.height) * 2 + 1
+          );
+          const raycaster = new THREE.Raycaster();
+          raycaster.setFromCamera(mouse, cameraRef.current);
+
+          if (draggedComp.type === 'BATTERY_9V') {
+            const matPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+            const matIntersect = new THREE.Vector3();
+            raycaster.ray.intersectPlane(matPlane, matIntersect);
+
+            const updatedComp: CircuitComponent = {
+              ...draggedComp,
+              position: [matIntersect.x, matIntersect.z, 0],
+            };
+            audioEngine.playSnapSound();
+            onMoveComponent(draggedComp.id, updatedComp);
+          } else {
+            const bbPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.0085);
+            const bbIntersect = new THREE.Vector3();
+            raycaster.ray.intersectPlane(bbPlane, bbIntersect);
+
+            const nearest = findNearestHole(bbIntersect.x, bbIntersect.z, 0.015);
+            if (nearest) {
+              const updatedComp = moveComponentToHole(draggedComp, nearest.id);
+              if (updatedComp) {
+                audioEngine.playSnapSound();
+                onMoveComponent(draggedComp.id, updatedComp);
+              }
+            }
+          }
+        }
+      }
+      isDraggingComponentRef.current = false;
+      draggedCompIdRef.current = null;
+    }
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -1268,6 +1415,12 @@ export default function CircuitWorkbench3D({
 
   // Click Handler: Place Component, Stretch Wire, Attach Probe, or Select Object
   const handleClick = (e: React.MouseEvent) => {
+    const dragDist = Math.hypot(
+      e.clientX - mouseDownPosRef.current.x,
+      e.clientY - mouseDownPosRef.current.y
+    );
+    if (dragDist >= 6) return;
+
     if (!containerRef.current || !cameraRef.current || !sceneRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const mouse = new THREE.Vector2(
@@ -1421,13 +1574,142 @@ export default function CircuitWorkbench3D({
         </div>
       )}
 
-      {/* Floating Viewport Controls Hint */}
-      <div className="absolute bottom-4 left-4 z-10 pointer-events-none glass-dock px-3 py-2 rounded-xl text-[11px] font-mono text-zinc-400 flex items-center gap-3 border border-white/[0.06]">
-        <span>• Left-drag: Orbit</span>
-        <span>• Right-drag: Pan</span>
-        <span>• Scroll: Zoom</span>
-        <span>• &apos;R&apos;: Rotate 90°</span>
-        <span>• &apos;Esc&apos;: Cancel</span>
+      {/* Context-Aware Dynamic Viewport Controls Bar */}
+      <div className="absolute bottom-4 left-4 right-4 z-10 pointer-events-none flex items-center justify-between gap-3">
+        <div className="glass-dock px-3.5 py-2 rounded-xl text-xs font-mono text-zinc-300 flex items-center gap-2.5 border border-white/[0.08] shadow-2xl backdrop-blur-xl">
+          {components.find((c) => c.id === selectedComponentId) ? (
+            (() => {
+              const comp = components.find((c) => c.id === selectedComponentId)!;
+              return (
+                <>
+                  <span className="flex items-center gap-1.5 font-bold text-amber-300">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                    {comp.name}
+                  </span>
+                  <span className="text-zinc-600">|</span>
+                  <span className="text-zinc-300">
+                    🔄 Rotate:{' '}
+                    <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">←</kbd>{' '}
+                    <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">→</kbd>{' '}
+                    <span className="text-zinc-400">or</span>{' '}
+                    <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">R</kbd>
+                  </span>
+                  <span className="text-zinc-600">|</span>
+                  <span className="text-zinc-300">
+                    🖐 Move:{' '}
+                    <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">Drag</kbd>{' '}
+                    <span className="text-zinc-400">or</span>{' '}
+                    <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">WASD</kbd>
+                  </span>
+                  <span className="text-zinc-600">|</span>
+                  <span className="text-zinc-400">
+                    <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-rose-300 border border-white/[0.1]">Del</kbd> Delete
+                  </span>
+                  <span className="text-zinc-600">|</span>
+                  <span className="text-zinc-400">
+                    <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-white/[0.1]">Esc</kbd> Deselect
+                  </span>
+                </>
+              );
+            })()
+          ) : wires.find((w) => w.id === selectedWireId) ? (
+            (() => {
+              const wire = wires.find((w) => w.id === selectedWireId)!;
+              return (
+                <>
+                  <span className="flex items-center gap-1.5 font-bold text-emerald-400">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    Wire {wire.startHoleId} ➔ {wire.endHoleId}
+                  </span>
+                  <span className="text-zinc-600">|</span>
+                  <span className="text-zinc-300">
+                    Color: <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">1–7</kbd>
+                  </span>
+                  <span className="text-zinc-600">|</span>
+                  <span className="text-zinc-400">
+                    <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-rose-300 border border-white/[0.1]">Del</kbd> Delete
+                  </span>
+                  <span className="text-zinc-600">|</span>
+                  <span className="text-zinc-400">
+                    <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-white/[0.1]">Esc</kbd> Deselect
+                  </span>
+                </>
+              );
+            })()
+          ) : activeTool === 'WIRE' || wiringStartHole ? (
+            <>
+              <span className="flex items-center gap-1.5 font-bold text-cyan-400">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                {wiringStartHole ? `Stretching from ${wiringStartHole}` : 'Wire Tool Active'}
+              </span>
+              <span className="text-zinc-600">|</span>
+              <span className="text-zinc-300">Click hole or terminal to connect</span>
+              <span className="text-zinc-600">|</span>
+              <span className="text-zinc-300">
+                Color:{' '}
+                <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">1–7</kbd>
+              </span>
+              <span className="text-zinc-600">|</span>
+              <span className="text-zinc-400">
+                <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-white/[0.1]">Esc</kbd> Cancel
+              </span>
+            </>
+          ) : placingComponent ? (
+            <>
+              <span className="flex items-center gap-1.5 font-bold text-amber-300">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                Placing {placingComponent.type}
+              </span>
+              <span className="text-zinc-600">|</span>
+              <span className="text-zinc-300">
+                Rotate:{' '}
+                <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">←</kbd>{' '}
+                <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">→</kbd>{' '}
+                <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">R</kbd>
+              </span>
+              <span className="text-zinc-600">|</span>
+              <span className="text-zinc-300">Click hole / mat to place</span>
+              <span className="text-zinc-600">|</span>
+              <span className="text-zinc-400">
+                <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-white/[0.1]">Esc</kbd> Cancel
+              </span>
+            </>
+          ) : (
+            <>
+              <span>Left-Click: Select</span>
+              <span className="text-zinc-600">•</span>
+              <span>Drag Mat: Orbit</span>
+              <span className="text-zinc-600">•</span>
+              <span>Right-Drag: Pan</span>
+              <span className="text-zinc-600">•</span>
+              <span>Scroll: Zoom</span>
+              <span className="text-zinc-600">•</span>
+              <span>
+                <kbd className="px-1 py-0.2 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">W</kbd> Wire
+              </span>
+              <span className="text-zinc-600">•</span>
+              <span>
+                <kbd className="px-1 py-0.2 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">C</kbd> Catalog
+              </span>
+              <span className="text-zinc-600">•</span>
+              <span>
+                <kbd className="px-1 py-0.2 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">Space</kbd> Sim
+              </span>
+            </>
+          )}
+        </div>
+
+        {/* Clickable Controls Guide Pill Button */}
+        {onOpenControlsGuide && (
+          <button
+            onClick={onOpenControlsGuide}
+            className="pointer-events-auto glass-dock px-3 py-2 rounded-xl text-xs font-mono text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 border border-amber-500/30 flex items-center gap-1.5 shadow-lg transition-all"
+            title="Open Full Controls & Shortcuts Guide (Press ? or H)"
+          >
+            <Keyboard className="w-3.5 h-3.5 text-amber-400" />
+            <span className="font-bold">Controls Guide (?)</span>
+          </button>
+        )}
       </div>
     </div>
   );

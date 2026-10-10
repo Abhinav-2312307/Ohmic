@@ -1,4 +1,4 @@
-import { BreadboardHole, CircuitComponent } from './componentTypes';
+import { BreadboardHole, CircuitComponent, JumperWire } from './componentTypes';
 
 export const PITCH = 0.00254; // 2.54 mm (0.1 inch standard pitch)
 export const TOTAL_COLUMNS = 63;
@@ -344,3 +344,170 @@ export function getComponentFootprint(
   }
   return { holeIds: [startHoleId], isValid: true };
 }
+
+// Rotate a placed component (either CW or CCW by 90 degrees)
+export function rotateComponent(
+  comp: CircuitComponent,
+  direction: 'CW' | 'CCW' = 'CW'
+): CircuitComponent {
+  if (comp.type === 'BATTERY_9V') {
+    const currentRotY = comp.rotation ? comp.rotation[1] : 0;
+    const delta = direction === 'CW' ? Math.PI / 2 : -Math.PI / 2;
+    const newRotY = (currentRotY + delta + Math.PI * 4) % (Math.PI * 2);
+    return {
+      ...comp,
+      rotation: [comp.rotation[0], newRotY, comp.rotation[2]],
+    };
+  }
+
+  // For breadboard components, find the primary anchor hole
+  const anchorHoleId = comp.pins[0]?.connectedHoleId;
+  if (!anchorHoleId || !BREADBOARD_HOLES.has(anchorHoleId)) {
+    const currentRotY = comp.rotation ? comp.rotation[1] : 0;
+    const delta = direction === 'CW' ? Math.PI / 2 : -Math.PI / 2;
+    const newRotY = (currentRotY + delta + Math.PI * 4) % (Math.PI * 2);
+    return {
+      ...comp,
+      rotation: [comp.rotation[0], newRotY, comp.rotation[2]],
+    };
+  }
+
+  const currentRotDeg = Math.round(((comp.rotation ? comp.rotation[1] : 0) * 180) / Math.PI) % 360;
+  // Toggle between 0 deg (horizontal) and 90 deg (vertical)
+  const newRotDeg = (currentRotDeg === 0 || currentRotDeg === 180) ? 90 : 0;
+
+  const fp = getComponentFootprint(comp.type, anchorHoleId, newRotDeg);
+  if (fp.isValid && fp.holeIds.length > 0) {
+    const firstPos = getHolePosition(fp.holeIds[0]);
+    const lastPos = getHolePosition(fp.holeIds[fp.holeIds.length - 1]);
+    const midX = firstPos && lastPos ? (firstPos[0] + lastPos[0]) / 2 : comp.position[0];
+    const midZ = firstPos && lastPos ? (firstPos[1] + lastPos[1]) / 2 : comp.position[1];
+
+    const newPins = comp.pins.map((pin, idx) => ({
+      ...pin,
+      connectedHoleId: fp.holeIds[idx] || fp.holeIds[0],
+    }));
+
+    return {
+      ...comp,
+      position: [midX, midZ, comp.position[2] || 0.012],
+      rotation: [0, (newRotDeg * Math.PI) / 180, 0],
+      pins: newPins,
+    };
+  }
+
+  // Fallback: update visual angle
+  const currentRotY = comp.rotation ? comp.rotation[1] : 0;
+  const delta = direction === 'CW' ? Math.PI / 2 : -Math.PI / 2;
+  const newRotY = (currentRotY + delta + Math.PI * 4) % (Math.PI * 2);
+  return {
+    ...comp,
+    rotation: [comp.rotation[0], newRotY, comp.rotation[2]],
+  };
+}
+
+// Move component directly to a target anchor hole
+export function moveComponentToHole(
+  comp: CircuitComponent,
+  targetHoleId: string
+): CircuitComponent | null {
+  if (comp.type === 'BATTERY_9V') return null;
+
+  const currentRotDeg = Math.round(((comp.rotation ? comp.rotation[1] : 0) * 180) / Math.PI) % 360;
+  const fp = getComponentFootprint(comp.type, targetHoleId, currentRotDeg);
+
+  if (!fp.isValid || fp.holeIds.length === 0) return null;
+
+  const firstPos = getHolePosition(fp.holeIds[0]);
+  const lastPos = getHolePosition(fp.holeIds[fp.holeIds.length - 1]);
+  if (!firstPos || !lastPos) return null;
+
+  const midX = (firstPos[0] + lastPos[0]) / 2;
+  const midZ = (firstPos[1] + lastPos[1]) / 2;
+
+  const newPins = comp.pins.map((pin, idx) => ({
+    ...pin,
+    connectedHoleId: fp.holeIds[idx] || fp.holeIds[0],
+  }));
+
+  return {
+    ...comp,
+    position: [midX, midZ, comp.position[2] || 0.012],
+    pins: newPins,
+  };
+}
+
+// Nudge component by column and row delta (via Arrow Keys / WASD)
+export function nudgeComponent(
+  comp: CircuitComponent,
+  deltaCol: number,
+  deltaRow: number
+): CircuitComponent | null {
+  if (comp.type === 'BATTERY_9V') {
+    // Battery rests on workbench mat
+    const step = 0.008; // 8mm per nudge
+    const newX = Math.max(-0.25, Math.min(0.25, comp.position[0] + deltaCol * step));
+    const newZ = Math.max(-0.16, Math.min(0.16, comp.position[1] + deltaRow * step));
+    return {
+      ...comp,
+      position: [newX, newZ, comp.position[2]],
+    };
+  }
+
+  const anchorHoleId = comp.pins[0]?.connectedHoleId;
+  if (!anchorHoleId) return null;
+
+  // If connected to power rail
+  if (anchorHoleId.startsWith('TOP_') || anchorHoleId.startsWith('BOT_')) {
+    const parts = anchorHoleId.split('_');
+    const railPrefix = `${parts[0]}_${parts[1]}`;
+    const colNum = parseInt(parts[2], 10) || 1;
+    const newCol = Math.max(1, Math.min(50, colNum + deltaCol));
+    const newHoleId = `${railPrefix}_${newCol}`;
+    return moveComponentToHole(comp, newHoleId);
+  }
+
+  // Terminal strips: A to J, 1 to 63
+  const match = anchorHoleId.match(/^([A-J])(\d+)$/);
+  if (!match) return null;
+
+  const rowOrder = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+  const currentRow = match[1];
+  const currentCol = parseInt(match[2], 10);
+  const currentRowIdx = rowOrder.indexOf(currentRow);
+  if (currentRowIdx === -1) return null;
+
+  const targetCol = Math.max(1, Math.min(TOTAL_COLUMNS, currentCol + deltaCol));
+  const targetRowIdx = Math.max(0, Math.min(rowOrder.length - 1, currentRowIdx + deltaRow));
+  const newAnchorHoleId = `${rowOrder[targetRowIdx]}${targetCol}`;
+
+  return moveComponentToHole(comp, newAnchorHoleId);
+}
+
+// Recompute wire terminal positions when a connected component moves or rotates
+export function updateWiresForComponent(
+  comp: CircuitComponent,
+  allComponents: CircuitComponent[],
+  wires: JumperWire[]
+): JumperWire[] {
+  let hasChange = false;
+  const updatedWires = wires.map((w) => {
+    const startMatches = w.startHoleId.startsWith(`${comp.id}:`);
+    const endMatches = w.endHoleId.startsWith(`${comp.id}:`);
+
+    if (!startMatches && !endMatches) return w;
+
+    hasChange = true;
+    const startPos = getHolePosition(w.startHoleId, allComponents) || w.startPos;
+    const endPos = getHolePosition(w.endHoleId, allComponents) || w.endPos;
+
+    return {
+      ...w,
+      startPos,
+      endPos,
+    };
+  });
+
+  return hasChange ? updatedWires : wires;
+}
+

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { CircuitComponent, JumperWire } from '../engine/componentTypes';
-import { Flame, AlertTriangle, Trash2, Cpu, Zap, Activity, RotateCw, X, Spline } from 'lucide-react';
+import { Flame, AlertTriangle, Trash2, Cpu, Zap, Activity, RotateCw, RotateCcw, X, Spline } from 'lucide-react';
 import { audioEngine } from '../engine/audioEngine';
 
 interface PropertyInspectorProps {
@@ -12,7 +12,7 @@ interface PropertyInspectorProps {
   onUpdateState: (id: string, newState: Partial<CircuitComponent['state']>) => void;
   onDeleteComponent: (id: string) => void;
   onDeleteWire?: (id: string) => void;
-  onRotateComponent?: (id: string) => void;
+  onRotateComponent?: (id: string, direction?: 'CW' | 'CCW') => void;
   onClose: () => void;
 }
 
@@ -96,16 +96,29 @@ export default function PropertyInspector({
 
         <div className="flex items-center gap-1">
           {onRotateComponent && (
-            <button
-              onClick={() => {
-                audioEngine.playKnobClick();
-                onRotateComponent(c.id);
-              }}
-              className="p-1.5 text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-all"
-              title="Rotate 90° (R)"
-            >
-              <RotateCw className="w-4 h-4" />
-            </button>
+            <div className="flex items-center bg-zinc-950/60 rounded-lg p-0.5 border border-white/[0.06]">
+              <button
+                onClick={() => {
+                  audioEngine.playKnobClick();
+                  onRotateComponent(c.id, 'CCW');
+                }}
+                className="p-1 text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 rounded transition-all"
+                title="Rotate Counter-Clockwise 90° (← Arrow Key)"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+              <div className="w-px h-3 bg-white/[0.1] mx-0.5" />
+              <button
+                onClick={() => {
+                  audioEngine.playKnobClick();
+                  onRotateComponent(c.id, 'CW');
+                }}
+                className="p-1 text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 rounded transition-all"
+                title="Rotate Clockwise 90° (→ Arrow Key or R)"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+              </button>
+            </div>
           )}
 
           <button
@@ -127,6 +140,16 @@ export default function PropertyInspector({
             <X className="w-4 h-4" />
           </button>
         </div>
+      </div>
+
+      {/* Quick Interactive Controls Pill Bar */}
+      <div className="my-2.5 px-2.5 py-1.5 bg-zinc-950/50 rounded-xl border border-white/[0.06] flex items-center justify-between text-[11px] font-mono text-zinc-400">
+        <span className="flex items-center gap-1">
+          🔄 Rotate: <kbd className="px-1 py-0.2 rounded bg-zinc-800 text-amber-300 border border-white/[0.08]">←</kbd> <kbd className="px-1 py-0.2 rounded bg-zinc-800 text-amber-300 border border-white/[0.08]">→</kbd>
+        </span>
+        <span className="flex items-center gap-1">
+          🖐 Move: <kbd className="px-1 py-0.2 rounded bg-zinc-800 text-amber-300 border border-white/[0.08]">Drag</kbd> or <kbd className="px-1 py-0.2 rounded bg-zinc-800 text-amber-300 border border-white/[0.08]">WASD</kbd>
+        </span>
       </div>
 
       {/* Burnout Warning */}
