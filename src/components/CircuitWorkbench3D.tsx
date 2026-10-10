@@ -43,6 +43,44 @@ interface CircuitWorkbench3DProps {
   onCancelAction: () => void;
 }
 
+interface ComponentRecord {
+  group: THREE.Group;
+  loadedModel?: THREE.Group;
+  selRing: THREE.Mesh;
+  light?: THREE.PointLight;
+  health: string;
+}
+
+interface WireRecord {
+  group: THREE.Group;
+  key: string;
+}
+
+const gltfLoader = new GLTFLoader();
+const modelPrefabCache = new Map<string, THREE.Group>();
+
+function loadModelPrefab(url: string, callback: (clone: THREE.Group) => void, onError?: () => void) {
+  if (modelPrefabCache.has(url)) {
+    callback(modelPrefabCache.get(url)!.clone(true));
+    return;
+  }
+  gltfLoader.load(
+    url,
+    (gltf) => {
+      gltf.scene.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+      modelPrefabCache.set(url, gltf.scene);
+      callback(gltf.scene.clone(true));
+    },
+    undefined,
+    onError
+  );
+}
+
 export default function CircuitWorkbench3D({
   components,
   wires,
@@ -77,7 +115,10 @@ export default function CircuitWorkbench3D({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const holeHitboxesRef = useRef<Map<string, THREE.Mesh>>(new Map());
   const componentMeshesRef = useRef<Map<string, THREE.Group>>(new Map());
+  const componentRecordsRef = useRef<Map<string, ComponentRecord>>(new Map());
   const wireMeshesRef = useRef<THREE.Group | null>(null);
+  const wireRecordsRef = useRef<Map<string, WireRecord>>(new Map());
+  const dmmLeadsRef = useRef<{ red?: THREE.Group; redHole?: string; black?: THREE.Group; blackHole?: string }>({});
   const activeLightsRef = useRef<THREE.PointLight[]>([]);
 
   // Dynamic Wire Stretching Preview Mesh
@@ -178,7 +219,8 @@ export default function CircuitWorkbench3D({
     keyLight.shadow.mapSize.height = 2048;
     keyLight.shadow.camera.near = 0.05;
     keyLight.shadow.camera.far = 1.0;
-    keyLight.shadow.bias = -0.0004;
+    keyLight.shadow.bias = -0.0001;
+    keyLight.shadow.normalBias = 0.001;
     const d = 0.16;
     keyLight.shadow.camera.left = -d;
     keyLight.shadow.camera.right = d;
@@ -418,28 +460,39 @@ export default function CircuitWorkbench3D({
     group.add(instancedHoles);
   };
 
-  // 2. Render Placed Components
+  // 2. Render & Reconcile Placed Components (Flicker-Free Diffing)
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
 
-    // Clear existing component meshes
-    componentMeshesRef.current.forEach((group) => scene.remove(group));
-    componentMeshesRef.current.clear();
-    activeLightsRef.current = [];
+    const currentRecords = componentRecordsRef.current;
+    const incomingCompMap = new Map(components.map((c) => [c.id, c]));
 
-    const gltfLoader = new GLTFLoader();
+    // 1. Remove deleted components
+    for (const [id, record] of Array.from(currentRecords.entries())) {
+      if (!incomingCompMap.has(id)) {
+        scene.remove(record.group);
+        if (record.light) {
+          const lIdx = activeLightsRef.current.indexOf(record.light);
+          if (lIdx !== -1) activeLightsRef.current.splice(lIdx, 1);
+        }
+        currentRecords.delete(id);
+        componentMeshesRef.current.delete(id);
+      }
+    }
 
+    // 2. Add new or update existing components
     components.forEach((comp) => {
-      const compGroup = new THREE.Group();
-      compGroup.position.set(comp.position[0], comp.position[2], comp.position[1]);
-      compGroup.rotation.set(comp.rotation[0], comp.rotation[1], comp.rotation[2]);
-      compGroup.userData = { componentId: comp.id, isCircuitComponent: true };
-      scene.add(compGroup);
-      componentMeshesRef.current.set(comp.id, compGroup);
+      let record = currentRecords.get(comp.id);
 
-      // Selected Highlight Ring
-      if (comp.id === selectedComponentId) {
+      if (!record) {
+        // Create new group once
+        const compGroup = new THREE.Group();
+        compGroup.position.set(comp.position[0], comp.position[2], comp.position[1]);
+        compGroup.rotation.set(comp.rotation[0], comp.rotation[1], comp.rotation[2]);
+        compGroup.userData = { componentId: comp.id, isCircuitComponent: true };
+
+        // Selection highlight ring
         const selRingGeo = new THREE.RingGeometry(0.008, 0.011, 24);
         const selRingMat = new THREE.MeshBasicMaterial({
           color: 0xf59e0b,
@@ -448,85 +501,140 @@ export default function CircuitWorkbench3D({
         const selRing = new THREE.Mesh(selRingGeo, selRingMat);
         selRing.rotation.x = -Math.PI / 2;
         selRing.position.y = 0.001;
+        selRing.visible = comp.id === selectedComponentId;
         compGroup.add(selRing);
-      }
 
-      if (comp.modelUrl) {
-        gltfLoader.load(
-          comp.modelUrl,
-          (gltf) => {
-            const m = gltf.scene;
-            m.traverse((child) => {
-              if ((child as THREE.Mesh).isMesh) {
-                child.castShadow = true;
-                child.receiveShadow = true;
-                child.userData = { componentId: comp.id, isCircuitComponent: true };
+        // Optional LED / Bulb point light
+        let light: THREE.PointLight | undefined;
+        if (comp.type === 'LED' || comp.type === 'BULB_INCANDESCENT') {
+          const lightColor = comp.type === 'LED' ? 0xff3333 : 0xffaa44;
+          light = new THREE.PointLight(lightColor, 0, 0.08);
+          light.position.set(0, 0.008, 0);
+          light.userData = { targetIntensity: 0 };
+          compGroup.add(light);
+          activeLightsRef.current.push(light);
+        }
 
-                // Overheating & Burnout visual degradation
-                if (comp.health === 'BURNED_OUT') {
-                  const burntMat = new THREE.MeshStandardMaterial({
-                    color: 0x18181b,
-                    roughness: 0.9,
-                    metalness: 0.1,
-                  });
-                  (child as THREE.Mesh).material = burntMat;
-                } else if (comp.health === 'OVERHEATING') {
-                  const overMat = new THREE.MeshStandardMaterial({
-                    color: 0x9a3412,
-                    roughness: 0.6,
-                    emissive: 0x7c2d12,
-                    emissiveIntensity: 0.4,
-                  });
-                  (child as THREE.Mesh).material = overMat;
+        record = {
+          group: compGroup,
+          selRing,
+          light,
+          health: comp.health,
+        };
+        currentRecords.set(comp.id, record);
+        componentMeshesRef.current.set(comp.id, compGroup);
+        scene.add(compGroup);
+
+        if (comp.modelUrl) {
+          loadModelPrefab(
+            comp.modelUrl,
+            (model) => {
+              model.traverse((child) => {
+                if ((child as THREE.Mesh).isMesh) {
+                  child.userData = { componentId: comp.id, isCircuitComponent: true };
                 }
-              }
-            });
-            compGroup.add(m);
-          },
-          undefined,
-          () => {
-            // Fallback geometric representation
-            const geo = new THREE.BoxGeometry(0.012, 0.006, 0.006);
-            const mat = new THREE.MeshStandardMaterial({
-              color: comp.type === 'LED' ? 0xef4444 : 0x06b6d4,
-              roughness: 0.4,
-            });
-            const fallbackMesh = new THREE.Mesh(geo, mat);
-            fallbackMesh.userData = { componentId: comp.id, isCircuitComponent: true };
-            compGroup.add(fallbackMesh);
-          }
-        );
+              });
+              record!.loadedModel = model;
+              compGroup.add(model);
+            },
+            () => {
+              const geo = new THREE.BoxGeometry(0.012, 0.006, 0.006);
+              const mat = new THREE.MeshStandardMaterial({
+                color: comp.type === 'LED' ? 0xef4444 : 0x06b6d4,
+                roughness: 0.4,
+              });
+              const fallbackMesh = new THREE.Mesh(geo, mat);
+              fallbackMesh.userData = { componentId: comp.id, isCircuitComponent: true };
+              compGroup.add(fallbackMesh);
+            }
+          );
+        }
       }
 
-      // Dynamic LED / Bulb Emission
-      if (
-        (comp.type === 'LED' || comp.type === 'BULB_INCANDESCENT') &&
-        comp.health !== 'BURNED_OUT' &&
-        comp.current > 0.001
-      ) {
-        const intensity = Math.min(2.5, (comp.current / 0.02) * 1.5);
-        const lightColor = comp.type === 'LED' ? 0xff3333 : 0xffaa44;
+      // Smooth position and rotation update
+      record.group.position.set(comp.position[0], comp.position[2], comp.position[1]);
+      record.group.rotation.set(comp.rotation[0], comp.rotation[1], comp.rotation[2]);
 
-        const emitLight = new THREE.PointLight(lightColor, intensity, 0.08);
-        emitLight.position.set(0, 0.008, 0);
-        emitLight.userData = { targetIntensity: intensity };
-        compGroup.add(emitLight);
-        activeLightsRef.current.push(emitLight);
+      // Selection indicator
+      record.selRing.visible = comp.id === selectedComponentId;
+
+      // Light emission update
+      if (record.light) {
+        if (comp.health !== 'BURNED_OUT' && comp.current > 0.001) {
+          const target = Math.min(2.5, (comp.current / 0.02) * 1.5);
+          record.light.userData.targetIntensity = target;
+        } else {
+          record.light.userData.targetIntensity = 0;
+          record.light.intensity = 0;
+        }
+      }
+
+      // Health / Burnout visual state update
+      if (record.loadedModel && record.health !== comp.health) {
+        record.health = comp.health;
+        record.loadedModel.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            if (comp.health === 'BURNED_OUT') {
+              (child as THREE.Mesh).material = new THREE.MeshStandardMaterial({
+                color: 0x18181b,
+                roughness: 0.9,
+                metalness: 0.1,
+              });
+            } else if (comp.health === 'OVERHEATING') {
+              (child as THREE.Mesh).material = new THREE.MeshStandardMaterial({
+                color: 0x9a3412,
+                roughness: 0.6,
+                emissive: 0x7c2d12,
+                emissiveIntensity: 0.4,
+              });
+            }
+          }
+        });
       }
     });
   }, [components, selectedComponentId]);
 
-  // 3. Render Permanent Jumper Wires & DMM Physical Leads
+  // 3. Render Permanent Jumper Wires & DMM Physical Leads (Flicker-Free Diffing)
   useEffect(() => {
-    const group = wireMeshesRef.current;
-    if (!group) return;
-    group.clear();
+    const mainGroup = wireMeshesRef.current;
+    if (!mainGroup) return;
 
+    const currentWires = wireRecordsRef.current;
+    const incomingWireMap = new Map(wires.map((w) => [w.id, w]));
+
+    // 1. Remove deleted wires
+    for (const [id, record] of Array.from(currentWires.entries())) {
+      if (!incomingWireMap.has(id)) {
+        mainGroup.remove(record.group);
+        record.group.traverse((c) => {
+          if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
+        });
+        currentWires.delete(id);
+      }
+    }
+
+    // 2. Add or update wires only if route or color or selection changed
     wires.forEach((wire) => {
+      const isSelected = wire.id === selectedWireId;
+      const wireKey = `${wire.startHoleId}_${wire.endHoleId}_${wire.color}_${isSelected ? 1 : 0}`;
+
+      const existing = currentWires.get(wire.id);
+      if (existing && existing.key === wireKey) {
+        // Unchanged - zero re-creation!
+        return;
+      }
+
+      if (existing) {
+        mainGroup.remove(existing.group);
+        existing.group.traverse((c) => {
+          if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
+        });
+        currentWires.delete(wire.id);
+      }
+
       const p1 = new THREE.Vector3(wire.startPos[0], wire.startPos[2], wire.startPos[1]);
       const p2 = new THREE.Vector3(wire.endPos[0], wire.endPos[2], wire.endPos[1]);
 
-      // Calculate middle sag point (catenary curve droop)
       const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
       const dist = p1.distanceTo(p2);
       mid.y += Math.max(0.008, Math.min(0.025, dist * 0.35));
@@ -539,7 +647,7 @@ export default function CircuitWorkbench3D({
         p2,
       ]);
 
-      const isSelected = wire.id === selectedWireId;
+      const wireGroup = new THREE.Group();
       const tubeGeo = new THREE.TubeGeometry(curve, 32, isSelected ? 0.0015 : 0.0011, 8, false);
       const tubeMat = new THREE.MeshStandardMaterial({
         color: isSelected ? 0xffffff : wire.color,
@@ -552,75 +660,107 @@ export default function CircuitWorkbench3D({
       const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
       tubeMesh.castShadow = true;
       tubeMesh.userData = { isWire: true, wireId: wire.id };
-      group.add(tubeMesh);
+      wireGroup.add(tubeMesh);
 
-      // DuPont terminal pin heads at both ends
+      // DuPont pins
       const pinGeo = new THREE.BoxGeometry(0.0025, 0.008, 0.0025);
       const pinMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.5 });
 
       const pin1 = new THREE.Mesh(pinGeo, pinMat);
       pin1.position.set(p1.x, p1.y + 0.004, p1.z);
       pin1.userData = { isWire: true, wireId: wire.id };
-      group.add(pin1);
+      wireGroup.add(pin1);
 
       const pin2 = new THREE.Mesh(pinGeo, pinMat);
       pin2.position.set(p2.x, p2.y + 0.004, p2.z);
       pin2.userData = { isWire: true, wireId: wire.id };
-      group.add(pin2);
+      wireGroup.add(pin2);
+
+      mainGroup.add(wireGroup);
+      currentWires.set(wire.id, { group: wireGroup, key: wireKey });
     });
 
-    // Render DMM Red Probe Lead in 3D
-    if (multimeter.redProbeHoleId) {
-      const pos = getHolePosition(multimeter.redProbeHoleId);
-      if (pos) {
-        const pinPos = new THREE.Vector3(pos[0], pos[2], pos[1]);
-        const dmmOrigin = new THREE.Vector3(0.09, 0.02, 0.09); // Cable leads towards bottom-right instrument
-        const mid = new THREE.Vector3().addVectors(pinPos, dmmOrigin).multiplyScalar(0.5);
-        mid.y += 0.03;
-
-        const curve = new THREE.CatmullRomCurve3([pinPos, mid, dmmOrigin]);
-        const tubeGeo = new THREE.TubeGeometry(curve, 24, 0.0012, 6, false);
-        const tubeMat = new THREE.MeshStandardMaterial({
-          color: 0xef4444,
-          roughness: 0.4,
-          emissive: 0xef4444,
-          emissiveIntensity: 0.2,
+    // 3. Reconcile DMM Red Probe Lead
+    if (multimeter.redProbeHoleId !== dmmLeadsRef.current.redHole) {
+      if (dmmLeadsRef.current.red) {
+        mainGroup.remove(dmmLeadsRef.current.red);
+        dmmLeadsRef.current.red.traverse((c) => {
+          if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
         });
-        const leadMesh = new THREE.Mesh(tubeGeo, tubeMat);
-        group.add(leadMesh);
+        dmmLeadsRef.current.red = undefined;
+      }
+      dmmLeadsRef.current.redHole = multimeter.redProbeHoleId;
 
-        // Gold needle tip probe housing
-        const probeGeo = new THREE.CylinderGeometry(0.002, 0.0008, 0.02, 12);
-        const probeMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3 });
-        const probe = new THREE.Mesh(probeGeo, probeMat);
-        probe.position.set(pinPos.x, pinPos.y + 0.01, pinPos.z);
-        group.add(probe);
+      if (multimeter.redProbeHoleId) {
+        const pos = getHolePosition(multimeter.redProbeHoleId);
+        if (pos) {
+          const redGroup = new THREE.Group();
+          const pinPos = new THREE.Vector3(pos[0], pos[2], pos[1]);
+          const dmmOrigin = new THREE.Vector3(0.09, 0.02, 0.09);
+          const mid = new THREE.Vector3().addVectors(pinPos, dmmOrigin).multiplyScalar(0.5);
+          mid.y += 0.03;
+
+          const curve = new THREE.CatmullRomCurve3([pinPos, mid, dmmOrigin]);
+          const tubeGeo = new THREE.TubeGeometry(curve, 24, 0.0012, 6, false);
+          const tubeMat = new THREE.MeshStandardMaterial({
+            color: 0xef4444,
+            roughness: 0.4,
+            emissive: 0xef4444,
+            emissiveIntensity: 0.2,
+          });
+          const leadMesh = new THREE.Mesh(tubeGeo, tubeMat);
+          redGroup.add(leadMesh);
+
+          const probeGeo = new THREE.CylinderGeometry(0.002, 0.0008, 0.02, 12);
+          const probeMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3 });
+          const probe = new THREE.Mesh(probeGeo, probeMat);
+          probe.position.set(pinPos.x, pinPos.y + 0.01, pinPos.z);
+          redGroup.add(probe);
+
+          mainGroup.add(redGroup);
+          dmmLeadsRef.current.red = redGroup;
+        }
       }
     }
 
-    // Render DMM Black Probe Lead in 3D
-    if (multimeter.blackProbeHoleId) {
-      const pos = getHolePosition(multimeter.blackProbeHoleId);
-      if (pos) {
-        const pinPos = new THREE.Vector3(pos[0], pos[2], pos[1]);
-        const dmmOrigin = new THREE.Vector3(0.08, 0.02, 0.095);
-        const mid = new THREE.Vector3().addVectors(pinPos, dmmOrigin).multiplyScalar(0.5);
-        mid.y += 0.025;
-
-        const curve = new THREE.CatmullRomCurve3([pinPos, mid, dmmOrigin]);
-        const tubeGeo = new THREE.TubeGeometry(curve, 24, 0.0012, 6, false);
-        const tubeMat = new THREE.MeshStandardMaterial({
-          color: 0x27272a,
-          roughness: 0.5,
+    // 4. Reconcile DMM Black Probe Lead
+    if (multimeter.blackProbeHoleId !== dmmLeadsRef.current.blackHole) {
+      if (dmmLeadsRef.current.black) {
+        mainGroup.remove(dmmLeadsRef.current.black);
+        dmmLeadsRef.current.black.traverse((c) => {
+          if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
         });
-        const leadMesh = new THREE.Mesh(tubeGeo, tubeMat);
-        group.add(leadMesh);
+        dmmLeadsRef.current.black = undefined;
+      }
+      dmmLeadsRef.current.blackHole = multimeter.blackProbeHoleId;
 
-        const probeGeo = new THREE.CylinderGeometry(0.002, 0.0008, 0.02, 12);
-        const probeMat = new THREE.MeshStandardMaterial({ color: 0x27272a, roughness: 0.4 });
-        const probe = new THREE.Mesh(probeGeo, probeMat);
-        probe.position.set(pinPos.x, pinPos.y + 0.01, pinPos.z);
-        group.add(probe);
+      if (multimeter.blackProbeHoleId) {
+        const pos = getHolePosition(multimeter.blackProbeHoleId);
+        if (pos) {
+          const blackGroup = new THREE.Group();
+          const pinPos = new THREE.Vector3(pos[0], pos[2], pos[1]);
+          const dmmOrigin = new THREE.Vector3(0.08, 0.02, 0.095);
+          const mid = new THREE.Vector3().addVectors(pinPos, dmmOrigin).multiplyScalar(0.5);
+          mid.y += 0.025;
+
+          const curve = new THREE.CatmullRomCurve3([pinPos, mid, dmmOrigin]);
+          const tubeGeo = new THREE.TubeGeometry(curve, 24, 0.0012, 6, false);
+          const tubeMat = new THREE.MeshStandardMaterial({
+            color: 0x27272a,
+            roughness: 0.5,
+          });
+          const leadMesh = new THREE.Mesh(tubeGeo, tubeMat);
+          blackGroup.add(leadMesh);
+
+          const probeGeo = new THREE.CylinderGeometry(0.002, 0.0008, 0.02, 12);
+          const probeMat = new THREE.MeshStandardMaterial({ color: 0x27272a, roughness: 0.4 });
+          const probe = new THREE.Mesh(probeGeo, probeMat);
+          probe.position.set(pinPos.x, pinPos.y + 0.01, pinPos.z);
+          blackGroup.add(probe);
+
+          mainGroup.add(blackGroup);
+          dmmLeadsRef.current.black = blackGroup;
+        }
       }
     }
   }, [wires, selectedWireId, multimeter.redProbeHoleId, multimeter.blackProbeHoleId]);
