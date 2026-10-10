@@ -124,8 +124,154 @@ export function generateBreadboardHoles(): Map<string, BreadboardHole> {
 
 export const BREADBOARD_HOLES = generateBreadboardHoles();
 
-// Fast coordinate lookup for any pin
+// Fast coordinate lookup for any pin (returns [x, y, z] in breadboard model units)
 export function getHolePosition(holeId: string): [number, number, number] | null {
   const hole = BREADBOARD_HOLES.get(holeId);
   return hole ? [hole.x, hole.y, hole.z] : null;
+}
+
+// Find nearest breadboard hole given Three.js world coordinates (x, z)
+export function findNearestHole(threeX: number, threeZ: number, maxDist: number = 0.008): { id: string; x: number; y: number; z: number } | null {
+  let nearestId: string | null = null;
+  let minDistSq = maxDist * maxDist;
+
+  BREADBOARD_HOLES.forEach((hole) => {
+    // In Three.js, horizontal surface is X and Z, where Three Z is hole.y
+    const dx = hole.x - threeX;
+    const dz = hole.y - threeZ;
+    const distSq = dx * dx + dz * dz;
+    if (distSq < minDistSq) {
+      minDistSq = distSq;
+      nearestId = hole.id;
+    }
+  });
+
+  if (!nearestId) return null;
+  const h = BREADBOARD_HOLES.get(nearestId)!;
+  return { id: h.id, x: h.x, y: h.y, z: h.z };
+}
+
+// Determine target pins for component placement given a starting anchor hole and rotation angle (0 or 90 deg)
+export function getComponentFootprint(
+  type: string,
+  startHoleId: string,
+  rotationDeg: number = 0
+): { holeIds: string[]; isValid: boolean } {
+  const startHole = BREADBOARD_HOLES.get(startHoleId);
+  if (!startHole) return { holeIds: [], isValid: false };
+
+  // If start hole is a rail pin
+  if (startHole.row.includes('POS') || startHole.row.includes('NEG')) {
+    return { holeIds: [startHoleId], isValid: true };
+  }
+
+  const rowOrder = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+  const currentRowIdx = rowOrder.indexOf(startHole.row);
+  const currentCol = startHole.column;
+
+  if (currentRowIdx === -1) return { holeIds: [startHoleId], isValid: false };
+
+  const isHorizontal = rotationDeg === 0 || rotationDeg === 180;
+
+  switch (type) {
+    case 'RESISTOR': {
+      // 4 holes span (10.16 mm standard pitch)
+      if (isHorizontal) {
+        const targetCol = currentCol + 4 <= 63 ? currentCol + 4 : currentCol - 4;
+        const targetId = `${startHole.row}${targetCol}`;
+        if (BREADBOARD_HOLES.has(targetId)) {
+          return { holeIds: [startHoleId, targetId], isValid: true };
+        }
+      } else {
+        // Vertical in same section (E->A or F->J)
+        const isUpper = currentRowIdx <= 4;
+        const targetRowIdx = isUpper
+          ? (currentRowIdx + 3 <= 4 ? currentRowIdx + 3 : currentRowIdx - 3)
+          : (currentRowIdx + 3 <= 9 ? currentRowIdx + 3 : currentRowIdx - 3);
+        const targetId = `${rowOrder[targetRowIdx]}${currentCol}`;
+        if (BREADBOARD_HOLES.has(targetId)) {
+          return { holeIds: [startHoleId, targetId], isValid: true };
+        }
+      }
+      break;
+    }
+
+    case 'LED':
+    case 'CAPACITOR_ELECTROLYTIC':
+    case 'CAPACITOR_CERAMIC': {
+      // 1 or 2 holes span (2.54mm pitch)
+      if (isHorizontal) {
+        const targetCol = currentCol + 1 <= 63 ? currentCol + 1 : currentCol - 1;
+        const targetId = `${startHole.row}${targetCol}`;
+        if (BREADBOARD_HOLES.has(targetId)) {
+          return { holeIds: [startHoleId, targetId], isValid: true };
+        }
+      } else {
+        const nextRowIdx = currentRowIdx + 1 <= 9 ? currentRowIdx + 1 : currentRowIdx - 1;
+        const targetId = `${rowOrder[nextRowIdx]}${currentCol}`;
+        if (BREADBOARD_HOLES.has(targetId)) {
+          return { holeIds: [startHoleId, targetId], isValid: true };
+        }
+      }
+      break;
+    }
+
+    case 'POTENTIOMETER': {
+      // 3 pins side-by-side
+      if (isHorizontal) {
+        const c1 = currentCol;
+        const c2 = currentCol + 1 <= 63 ? currentCol + 1 : currentCol - 1;
+        const c3 = currentCol + 2 <= 63 ? currentCol + 2 : currentCol - 2;
+        const id2 = `${startHole.row}${c2}`;
+        const id3 = `${startHole.row}${c3}`;
+        if (BREADBOARD_HOLES.has(id2) && BREADBOARD_HOLES.has(id3)) {
+          return { holeIds: [startHoleId, id2, id3], isValid: true };
+        }
+      } else {
+        // Vertical
+        const r1 = currentRowIdx;
+        const r2 = r1 + 1 <= 9 ? r1 + 1 : r1 - 1;
+        const r3 = r1 + 2 <= 9 ? r1 + 2 : r1 - 2;
+        const id2 = `${rowOrder[r2]}${currentCol}`;
+        const id3 = `${rowOrder[r3]}${currentCol}`;
+        if (BREADBOARD_HOLES.has(id2) && BREADBOARD_HOLES.has(id3)) {
+          return { holeIds: [startHoleId, id2, id3], isValid: true };
+        }
+      }
+      break;
+    }
+
+    case 'SWITCH_TACTILE': {
+      // Spans across the trough: Row E to Row F
+      const targetId = startHole.row === 'E' ? `F${currentCol}` : startHole.row === 'F' ? `E${currentCol}` : `${startHole.row}${currentCol + 2}`;
+      if (BREADBOARD_HOLES.has(targetId)) {
+        return { holeIds: [startHoleId, targetId], isValid: true };
+      }
+      break;
+    }
+
+    case 'BULB_INCANDESCENT':
+    case 'SPEAKER':
+    case 'INDUCTOR_TOROID': {
+      // 2 or 3 holes span
+      const targetCol = currentCol + 2 <= 63 ? currentCol + 2 : currentCol - 2;
+      const targetId = `${startHole.row}${targetCol}`;
+      if (BREADBOARD_HOLES.has(targetId)) {
+        return { holeIds: [startHoleId, targetId], isValid: true };
+      }
+      break;
+    }
+
+    case 'BATTERY_9V': {
+      // Direct connection to top rails: Positive & Negative
+      return { holeIds: ['TOP_POS_5', 'TOP_NEG_5'], isValid: true };
+    }
+  }
+
+  // Fallback default: single hole or next column
+  const fallbackTarget = `${startHole.row}${currentCol + 1 <= 63 ? currentCol + 1 : currentCol - 1}`;
+  if (BREADBOARD_HOLES.has(fallbackTarget)) {
+    return { holeIds: [startHoleId, fallbackTarget], isValid: true };
+  }
+  return { holeIds: [startHoleId], isValid: true };
 }

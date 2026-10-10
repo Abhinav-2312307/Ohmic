@@ -3,7 +3,7 @@
 import React, { useEffect } from 'react';
 import { MultimeterState } from '../engine/componentTypes';
 import { audioEngine } from '../engine/audioEngine';
-import { Activity, Volume2, VolumeX } from 'lucide-react';
+import { Activity, Zap, Volume2, X } from 'lucide-react';
 
 interface MultimeterProps {
   state: MultimeterState;
@@ -11,6 +11,7 @@ interface MultimeterProps {
   onSelectProbe: (probe: 'RED' | 'BLACK') => void;
   onClearProbes: () => void;
   activeProbe: 'RED' | 'BLACK' | null;
+  onClose?: () => void;
 }
 
 export default function MultimeterPanel({
@@ -19,8 +20,8 @@ export default function MultimeterPanel({
   onSelectProbe,
   onClearProbes,
   activeProbe,
+  onClose,
 }: MultimeterProps) {
-  // Trigger audio continuity buzzer when continuous in continuity mode
   useEffect(() => {
     if (state.mode === 'CONTINUITY' && state.isContinuous) {
       audioEngine.setContinuityBeep(true);
@@ -44,43 +45,54 @@ export default function MultimeterPanel({
   };
 
   return (
-    <div className="flex flex-col bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-2xl w-full max-w-sm">
+    <div className="flex flex-col glass-panel rounded-2xl p-4 shadow-2xl w-full max-w-sm select-none border border-white/[0.08] animate-in fade-in duration-200">
       {/* Multimeter Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+      <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
         <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-amber-500 animate-pulse" />
-          <span className="font-mono text-xs font-bold tracking-wider text-slate-200">
-            PRECISION DMM-8800
+          <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shadow-sm shadow-amber-400" />
+          <span className="font-mono text-xs font-bold tracking-wider text-zinc-100">
+            FLUKE DMM-8800
           </span>
         </div>
-        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-          TRUE RMS
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[9px] font-mono font-medium px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            TRUE RMS • 20kHz
+          </span>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
+              title="Close"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* LCD Display */}
-      <div className="my-3 bg-emerald-950/30 border-2 border-emerald-900/60 rounded-lg p-3.5 flex flex-col justify-between shadow-inner">
-        <div className="flex items-center justify-between text-[11px] font-mono text-emerald-400/80 mb-1">
+      {/* High-Contrast Segmented LCD Display */}
+      <div className="my-3 bg-zinc-950/90 border border-white/[0.08] rounded-xl p-3.5 flex flex-col justify-between shadow-inner">
+        <div className="flex items-center justify-between text-[10px] font-mono text-amber-400/80 mb-1">
           <span className="flex items-center gap-1">
-            <Activity className="w-3 h-3" /> AUTO RANGE
+            <Activity className="w-3 h-3 text-emerald-400" /> AUTO-RANGE
           </span>
-          <span className="font-bold">{state.mode}</span>
+          <span className="font-bold tracking-wider">{state.mode}</span>
         </div>
 
         {/* Large Digital Value */}
         <div className="flex items-baseline justify-between font-mono py-1">
-          <span className="text-3xl font-extrabold text-emerald-400 tracking-tight">
+          <span className="text-3xl font-extrabold text-amber-400 tracking-tight lcd-amber">
             {formatReading()}
           </span>
-          <span className="text-lg font-bold text-emerald-500 ml-2">
+          <span className="text-base font-bold text-amber-500/80 ml-2 font-mono">
             {state.unit}
           </span>
         </div>
 
         {/* Bar Graph Scale */}
-        <div className="w-full bg-emerald-950/80 h-1.5 rounded-full overflow-hidden mt-2 border border-emerald-900/40">
+        <div className="w-full bg-zinc-900 h-1.5 rounded-full overflow-hidden mt-2 border border-white/[0.06]">
           <div
-            className="h-full bg-emerald-400 transition-all duration-150"
+            className="h-full bg-amber-400 transition-all duration-150 shadow-sm shadow-amber-400"
             style={{
               width: `${Math.min(100, Math.max(5, (Math.abs(state.reading) / 10) * 100))}%`,
             }}
@@ -90,94 +102,84 @@ export default function MultimeterPanel({
 
       {/* Mode Rotary Selector Buttons */}
       <div className="grid grid-cols-4 gap-1.5 my-2">
-        <button
-          onClick={() => onModeChange('VOLTS_DC')}
-          className={`py-1.5 px-2 rounded text-xs font-mono font-bold transition-all ${
-            state.mode === 'VOLTS_DC'
-              ? 'bg-amber-500 text-slate-950 shadow-md'
-              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-          }`}
-        >
-          V ⎓
-        </button>
-        <button
-          onClick={() => onModeChange('VOLTS_AC')}
-          className={`py-1.5 px-2 rounded text-xs font-mono font-bold transition-all ${
-            state.mode === 'VOLTS_AC'
-              ? 'bg-amber-500 text-slate-950 shadow-md'
-              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-          }`}
-        >
-          V ~
-        </button>
-        <button
-          onClick={() => onModeChange('RESISTANCE')}
-          className={`py-1.5 px-2 rounded text-xs font-mono font-bold transition-all ${
-            state.mode === 'RESISTANCE'
-              ? 'bg-amber-500 text-slate-950 shadow-md'
-              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-          }`}
-        >
-          Ω
-        </button>
-        <button
-          onClick={() => onModeChange('CONTINUITY')}
-          className={`py-1.5 px-2 rounded text-xs font-mono font-bold transition-all ${
-            state.mode === 'CONTINUITY'
-              ? 'bg-amber-500 text-slate-950 shadow-md'
-              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-          }`}
-        >
-          🔊 BEEP
-        </button>
+        {[
+          { mode: 'VOLTS_DC', label: 'V ⎓' },
+          { mode: 'VOLTS_AC', label: 'V ~' },
+          { mode: 'RESISTANCE', label: 'Ω' },
+          { mode: 'CONTINUITY', label: '🔊 BEEP' },
+        ].map((m) => (
+          <button
+            key={m.mode}
+            onClick={() => {
+              audioEngine.playKnobClick();
+              onModeChange(m.mode as MultimeterState['mode']);
+            }}
+            className={`py-2 px-1 rounded-xl text-xs font-mono font-bold transition-all ${
+              state.mode === m.mode
+                ? 'bg-amber-500 text-zinc-950 shadow-md shadow-amber-500/20'
+                : 'bg-zinc-850 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 border border-white/[0.04]'
+            }`}
+          >
+            {m.label}
+          </button>
+        ))}
       </div>
 
       {/* Probe Lead Controls */}
-      <div className="mt-3 pt-3 border-t border-slate-800 flex flex-col gap-2">
-        <div className="text-[11px] font-mono text-slate-400 flex items-center justify-between">
-          <span>PROBE CONNECTIONS:</span>
+      <div className="mt-2 pt-3 border-t border-white/[0.06] flex flex-col gap-2">
+        <div className="text-[10px] font-mono text-zinc-400 flex items-center justify-between">
+          <span>TEST PROBE LEADS:</span>
           <button
-            onClick={onClearProbes}
-            className="text-[10px] text-slate-500 hover:text-slate-300 underline"
+            onClick={() => {
+              audioEngine.playPopSound();
+              onClearProbes();
+            }}
+            className="text-[10px] text-zinc-500 hover:text-zinc-300 underline cursor-pointer"
           >
-            Clear Both
+            Unplug Both
           </button>
         </div>
 
         <div className="grid grid-cols-2 gap-2">
           {/* Red Positive Probe */}
           <button
-            onClick={() => onSelectProbe('RED')}
-            className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs font-mono transition-all ${
+            onClick={() => {
+              audioEngine.playKnobClick();
+              onSelectProbe('RED');
+            }}
+            className={`flex items-center justify-between px-3 py-2 rounded-xl border text-xs font-mono transition-all ${
               activeProbe === 'RED'
-                ? 'bg-red-500/20 border-red-500 text-red-300 ring-2 ring-red-500/30'
-                : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:border-red-500/50'
+                ? 'bg-red-500/20 border-red-500 text-red-300 ring-2 ring-red-500/30 shadow-md'
+                : 'bg-zinc-900/80 border-white/[0.06] text-zinc-300 hover:border-red-500/50'
             }`}
           >
             <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
+              <span className="w-2 h-2 rounded-full bg-red-500 shadow-sm shadow-red-500" />
               <span>RED (+)</span>
             </div>
-            <span className="text-[10px] text-slate-400">
-              {state.redProbeHoleId || 'Unset'}
+            <span className="text-[10px] text-zinc-400 font-bold">
+              {state.redProbeHoleId || 'Click Pin'}
             </span>
           </button>
 
           {/* Black Negative Probe */}
           <button
-            onClick={() => onSelectProbe('BLACK')}
-            className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs font-mono transition-all ${
+            onClick={() => {
+              audioEngine.playKnobClick();
+              onSelectProbe('BLACK');
+            }}
+            className={`flex items-center justify-between px-3 py-2 rounded-xl border text-xs font-mono transition-all ${
               activeProbe === 'BLACK'
-                ? 'bg-slate-500/20 border-slate-400 text-slate-200 ring-2 ring-slate-400/30'
-                : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:border-slate-400/50'
+                ? 'bg-zinc-600/20 border-zinc-400 text-zinc-200 ring-2 ring-zinc-400/30 shadow-md'
+                : 'bg-zinc-900/80 border-white/[0.06] text-zinc-300 hover:border-zinc-500/50'
             }`}
           >
             <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-slate-900 border border-slate-500" />
+              <span className="w-2 h-2 rounded-full bg-zinc-700 border border-zinc-500" />
               <span>BLK (COM)</span>
             </div>
-            <span className="text-[10px] text-slate-400">
-              {state.blackProbeHoleId || 'Unset'}
+            <span className="text-[10px] text-zinc-400 font-bold">
+              {state.blackProbeHoleId || 'Click Pin'}
             </span>
           </button>
         </div>
