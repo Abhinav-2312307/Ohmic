@@ -10,9 +10,9 @@ export interface PresetCircuit {
 }
 
 export function getPresetCircuits(): PresetCircuit[] {
-  // Common 9V battery off-board position on the ESD bench mat
-  const battX = -0.06;
-  const battZ = 0.055;
+  // 9V battery position on the ESD bench mat right next to breadboard rails
+  const battX = -0.055;
+  const battZ = 0.052;
   const battPosTerm: [number, number, number] = [battX + 0.0064, battZ, 0.048];
   const battNegTerm: [number, number, number] = [battX - 0.0064, battZ, 0.048];
 
@@ -20,7 +20,7 @@ export function getPresetCircuits(): PresetCircuit[] {
     {
       id: 'led_basic',
       title: '1. Basic LED & Current Limiting Resistor',
-      description: '9V Battery on the bench mat wired to the breadboard rails. Power feeds a 1kΩ resistor in column 15 and a 5mm Red LED in columns 19–20. Demonstrates Ohm’s law and breadboard internal terminal clips.',
+      description: '9V Battery on the bench mat wired to the breadboard rails. Power feeds a 470Ω resistor in column 15 and a 5mm Red LED in columns 19–20. Demonstrates Ohm’s law, current-limiting protection, and breadboard internal terminal clips.',
       components: [
         {
           id: 'batt_1',
@@ -44,11 +44,11 @@ export function getPresetCircuits(): PresetCircuit[] {
         {
           id: 'res_1',
           type: 'RESISTOR',
-          name: '1kΩ Resistor (1/4W)',
-          value: 1000,
+          name: '470Ω Resistor (1/4W)',
+          value: 470,
           unit: 'Ω',
           maxPowerRating: 0.25,
-          position: [0.0, 0.012, 0.012],
+          position: [-0.0381, 0.00635, 0.0068],
           rotation: [0, 0, 0],
           modelUrl: '/models/components/resistor_1k.glb',
           voltageDrop: 0,
@@ -69,7 +69,7 @@ export function getPresetCircuits(): PresetCircuit[] {
           unit: 'pc',
           ledColor: 'RED',
           forwardVoltage: 1.9,
-          position: [0.012, 0.012, 0.012],
+          position: [-0.03175, 0.00889, 0.0068],
           rotation: [0, 0, 0],
           modelUrl: '/models/components/led_5mm_red.glb',
           voltageDrop: 0,
@@ -78,8 +78,8 @@ export function getPresetCircuits(): PresetCircuit[] {
           temperature: 25,
           health: 'NORMAL',
           pins: [
-            { id: 'l1', name: 'ANODE', relativePos: [0.00127, 0, 0], connectedHoleId: 'D19' },
-            { id: 'l2', name: 'CATHODE', relativePos: [-0.00127, 0, 0], connectedHoleId: 'D20' },
+            { id: 'l1', name: 'ANODE', relativePos: [-0.00127, 0, 0], connectedHoleId: 'D19' },
+            { id: 'l2', name: 'CATHODE', relativePos: [0.00127, 0, 0], connectedHoleId: 'D20' },
           ],
         },
       ],
@@ -160,7 +160,7 @@ export function getPresetCircuits(): PresetCircuit[] {
           name: '10kΩ Rotary Potentiometer',
           value: 100,
           unit: 'Ω',
-          position: [-0.02, 0.012, 0.015],
+          position: [-0.02, 0.012, 0.0068],
           rotation: [0, 0, 0],
           modelUrl: '/models/components/potentiometer_10k.glb',
           voltageDrop: 0,
@@ -181,7 +181,7 @@ export function getPresetCircuits(): PresetCircuit[] {
           name: 'Incandescent Indicator Bulb',
           value: 25,
           unit: 'Ω',
-          position: [0.03, 0.012, 0.02],
+          position: [0.03, 0.012, 0.0065],
           rotation: [0, 0, 0],
           modelUrl: '/models/components/bulb_incandescent.glb',
           voltageDrop: 0,
@@ -279,7 +279,7 @@ export function getPresetCircuits(): PresetCircuit[] {
           value: 10,
           unit: 'Ω',
           maxPowerRating: 0.25,
-          position: [0.0, 0.012, 0.012],
+          position: [0.0, 0.012, 0.0068],
           rotation: [0, 0, 0],
           modelUrl: '/models/components/resistor_1k.glb',
           voltageDrop: 0,
@@ -366,7 +366,7 @@ export function getPresetCircuits(): PresetCircuit[] {
           name: '8Ω Dynamic Mini Speaker',
           value: 8,
           unit: 'Ω',
-          position: [0.03, 0.015, 0.02],
+          position: [0.03, 0.015, 0.0068],
           rotation: [0, 0, 0],
           modelUrl: '/models/components/speaker_8ohm.glb',
           voltageDrop: 0,
@@ -385,7 +385,7 @@ export function getPresetCircuits(): PresetCircuit[] {
           name: 'Tactile Pushbutton',
           value: 1,
           unit: 'sw',
-          position: [-0.01, 0.012, 0.01],
+          position: [-0.01, 0.012, 0.0065],
           rotation: [0, 0, 0],
           modelUrl: '/models/components/button_tactile_6mm.glb',
           voltageDrop: 0,

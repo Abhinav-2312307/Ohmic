@@ -137,6 +137,11 @@ export function solveCircuit(
     }
   });
 
+  // If there are no independent voltage sources, there is no energy in the circuit
+  if (vSources.length === 0) {
+    return generateEmptyResult(components, wires, multimeter, ambientTemperature);
+  }
+
   const matrixSize = (numNodes - 1) + vSources.length;
 
   if (matrixSize <= 0) {
@@ -144,133 +149,187 @@ export function solveCircuit(
     return generateEmptyResult(components, wires, multimeter, ambientTemperature);
   }
 
-  // Linear system: A * x = z
-  const A: number[][] = Array(matrixSize)
-    .fill(0)
-    .map(() => Array(matrixSize).fill(0));
-  const z: number[] = Array(matrixSize).fill(0);
-
-  // Helper to stamp conductance g between two node indices
-  const stampConductance = (n1: number, n2: number, g: number) => {
-    if (isNaN(g) || !isFinite(g) || g <= 0) return;
-    const i1 = n1 - 1; // 1-based to 0-based index for non-ground nodes
-    const i2 = n2 - 1;
-
-    if (i1 >= 0) A[i1][i1] += g;
-    if (i2 >= 0) A[i2][i2] += g;
-    if (i1 >= 0 && i2 >= 0) {
-      A[i1][i2] -= g;
-      A[i2][i1] -= g;
-    }
-  };
-
-  // Stamp components
+  // Multi-pass diode solver to determine which LEDs/Diodes are forward-conducting
+  // Physical initial state is ALWAYS FALSE (non-conducting) so diodes never act as phantom energy sources
+  const ledStates = new Map<string, boolean>();
   components.forEach((comp) => {
-    if (comp.health === 'BURNED_OUT') return;
-
-    if (comp.type === 'RESISTOR') {
-      const pinA = comp.pins[0];
-      const pinB = comp.pins[1];
-      if (pinA?.connectedHoleId && pinB?.connectedHoleId) {
-        const n1 = rootToNodeId.get(uf.find(pinA.connectedHoleId)) ?? 0;
-        const n2 = rootToNodeId.get(uf.find(pinB.connectedHoleId)) ?? 0;
-        const g = 1 / Math.max(0.1, comp.value);
-        stampConductance(n1, n2, g);
-      }
-    } else if (comp.type === 'POTENTIOMETER') {
-      const pin1 = comp.pins[0];
-      const pinW = comp.pins[1];
-      const pin2 = comp.pins[2];
-      const ratio = Math.max(0.001, Math.min(0.999, comp.state?.wiperRatio ?? 0.5));
-
-      if (pin1?.connectedHoleId && pinW?.connectedHoleId) {
-        const n1 = rootToNodeId.get(uf.find(pin1.connectedHoleId)) ?? 0;
-        const nw = rootToNodeId.get(uf.find(pinW.connectedHoleId)) ?? 0;
-        stampConductance(n1, nw, 1 / (comp.value * ratio));
-      }
-      if (pinW?.connectedHoleId && pin2?.connectedHoleId) {
-        const nw = rootToNodeId.get(uf.find(pinW.connectedHoleId)) ?? 0;
-        const n2 = rootToNodeId.get(uf.find(pin2.connectedHoleId)) ?? 0;
-        stampConductance(nw, n2, 1 / (comp.value * (1 - ratio)));
-      }
-    } else if (comp.type === 'LED') {
-      const anode = comp.pins.find((p) => p.name === 'ANODE');
-      const cathode = comp.pins.find((p) => p.name === 'CATHODE');
-      if (anode?.connectedHoleId && cathode?.connectedHoleId) {
-        const nA = rootToNodeId.get(uf.find(anode.connectedHoleId)) ?? 0;
-        const nK = rootToNodeId.get(uf.find(cathode.connectedHoleId)) ?? 0;
-        // Diode model: forward conducts through low dynamic resistance
-        stampConductance(nA, nK, 1 / 18);
-      }
-    } else if (comp.type === 'BULB_INCANDESCENT') {
-      const pinA = comp.pins[0];
-      const pinB = comp.pins[1];
-      if (pinA?.connectedHoleId && pinB?.connectedHoleId) {
-        const n1 = rootToNodeId.get(uf.find(pinA.connectedHoleId)) ?? 0;
-        const n2 = rootToNodeId.get(uf.find(pinB.connectedHoleId)) ?? 0;
-        // Dynamic filament cold/hot resistance
-        const filamentR = Math.max(5, comp.value);
-        stampConductance(n1, n2, 1 / filamentR);
-      }
-    } else if (comp.type === 'SPEAKER') {
-      const pinA = comp.pins[0];
-      const pinB = comp.pins[1];
-      if (pinA?.connectedHoleId && pinB?.connectedHoleId) {
-        const n1 = rootToNodeId.get(uf.find(pinA.connectedHoleId)) ?? 0;
-        const n2 = rootToNodeId.get(uf.find(pinB.connectedHoleId)) ?? 0;
-        stampConductance(n1, n2, 1 / 8); // 8 Ohm voice coil
-      }
-    } else if (comp.type === 'SWITCH_TACTILE' || comp.type === 'SWITCH_TOGGLE') {
-      const isClosed = comp.state?.isClosed ?? false;
-      const pinA = comp.pins[0];
-      const pinB = comp.pins[1];
-      if (pinA?.connectedHoleId && pinB?.connectedHoleId) {
-        const n1 = rootToNodeId.get(uf.find(pinA.connectedHoleId)) ?? 0;
-        const n2 = rootToNodeId.get(uf.find(pinB.connectedHoleId)) ?? 0;
-        const r = isClosed ? 0.005 : 1e8;
-        stampConductance(n1, n2, 1 / r);
-      }
-    } else if (comp.type === 'INDUCTOR_TOROID') {
-      const pinA = comp.pins[0];
-      const pinB = comp.pins[1];
-      if (pinA?.connectedHoleId && pinB?.connectedHoleId) {
-        const n1 = rootToNodeId.get(uf.find(pinA.connectedHoleId)) ?? 0;
-        const n2 = rootToNodeId.get(uf.find(pinB.connectedHoleId)) ?? 0;
-        stampConductance(n1, n2, 1 / 0.1); // DC coil resistance
-      }
-    } else if (comp.type === 'CAPACITOR_ELECTROLYTIC' || comp.type === 'CAPACITOR_CERAMIC') {
-      const pinA = comp.pins[0];
-      const pinB = comp.pins[1];
-      if (pinA?.connectedHoleId && pinB?.connectedHoleId) {
-        const n1 = rootToNodeId.get(uf.find(pinA.connectedHoleId)) ?? 0;
-        const n2 = rootToNodeId.get(uf.find(pinB.connectedHoleId)) ?? 0;
-        stampConductance(n1, n2, 1 / 1e7); // DC leakage
-      }
+    if (comp.type === 'LED' && comp.health !== 'BURNED_OUT') {
+      ledStates.set(comp.id, false); // initial guess: non-conducting
     }
   });
 
-  // Stamp Independent Voltage Sources (MNA B and C sub-matrices)
-  vSources.forEach((vs) => {
-    const row = (numNodes - 1) + vs.index;
-    const col = row;
+  let x: number[] = [];
+  const maxIterations = 3;
 
-    const ip = vs.nodePos - 1;
-    const ineg = vs.nodeNeg - 1;
+  for (let iter = 0; iter < maxIterations; iter++) {
+    // Linear system: A * x = z
+    const A: number[][] = Array(matrixSize)
+      .fill(0)
+      .map(() => Array(matrixSize).fill(0));
+    const z: number[] = Array(matrixSize).fill(0);
 
-    if (ip >= 0) {
-      A[row][ip] = 1;
-      A[ip][col] = 1;
-    }
-    if (ineg >= 0) {
-      A[row][ineg] = -1;
-      A[ineg][col] = -1;
-    }
+    // Helper to stamp conductance g between two node indices
+    const stampConductance = (n1: number, n2: number, g: number) => {
+      if (isNaN(g) || !isFinite(g) || g <= 0) return;
+      const i1 = n1 - 1; // 1-based to 0-based index for non-ground nodes
+      const i2 = n2 - 1;
 
-    z[row] = vs.voltage;
-  });
+      if (i1 >= 0) A[i1][i1] += g;
+      if (i2 >= 0) A[i2][i2] += g;
+      if (i1 >= 0 && i2 >= 0) {
+        A[i1][i2] -= g;
+        A[i2][i1] -= g;
+      }
+    };
 
-  // Solve linear system A * x = z using Gaussian elimination with partial pivoting
-  const x = solveLinearSystem(A, z);
+    // Stamp components
+    components.forEach((comp) => {
+      if (comp.health === 'BURNED_OUT') return;
+
+      if (comp.type === 'RESISTOR') {
+        const pinA = comp.pins[0];
+        const pinB = comp.pins[1];
+        if (pinA?.connectedHoleId && pinB?.connectedHoleId) {
+          const n1 = rootToNodeId.get(uf.find(pinA.connectedHoleId)) ?? 0;
+          const n2 = rootToNodeId.get(uf.find(pinB.connectedHoleId)) ?? 0;
+          const g = 1 / Math.max(0.1, comp.value);
+          stampConductance(n1, n2, g);
+        }
+      } else if (comp.type === 'POTENTIOMETER') {
+        const pin1 = comp.pins[0];
+        const pinW = comp.pins[1];
+        const pin2 = comp.pins[2];
+        const ratio = Math.max(0.001, Math.min(0.999, comp.state?.wiperRatio ?? 0.5));
+
+        if (pin1?.connectedHoleId && pinW?.connectedHoleId) {
+          const n1 = rootToNodeId.get(uf.find(pin1.connectedHoleId)) ?? 0;
+          const nw = rootToNodeId.get(uf.find(pinW.connectedHoleId)) ?? 0;
+          stampConductance(n1, nw, 1 / (comp.value * ratio));
+        }
+        if (pinW?.connectedHoleId && pin2?.connectedHoleId) {
+          const nw = rootToNodeId.get(uf.find(pinW.connectedHoleId)) ?? 0;
+          const n2 = rootToNodeId.get(uf.find(pin2.connectedHoleId)) ?? 0;
+          stampConductance(nw, n2, 1 / (comp.value * (1 - ratio)));
+        }
+      } else if (comp.type === 'LED') {
+        const anode = comp.pins.find((p) => p.name === 'ANODE' || p.id === 'l1' || p.id === 'pos');
+        const cathode = comp.pins.find((p) => p.name === 'CATHODE' || p.id === 'l2' || p.id === 'neg');
+        if (anode?.connectedHoleId && cathode?.connectedHoleId) {
+          const nA = rootToNodeId.get(uf.find(anode.connectedHoleId)) ?? 0;
+          const nK = rootToNodeId.get(uf.find(cathode.connectedHoleId)) ?? 0;
+          const vf = comp.forwardVoltage ?? 1.9;
+          const rd = 18;
+          const isForward = ledStates.get(comp.id) ?? true;
+
+          if (isForward) {
+            stampConductance(nA, nK, 1 / rd);
+            // Independent companion current source: Ieq = vf / rd
+            const ieq = vf / rd;
+            const iA = nA - 1;
+            const iK = nK - 1;
+            if (iA >= 0) z[iA] += ieq;
+            if (iK >= 0) z[iK] -= ieq;
+          } else {
+            // Reverse-biased / below knee: high impedance
+            stampConductance(nA, nK, 1 / 1e7);
+          }
+        }
+      } else if (comp.type === 'BULB_INCANDESCENT') {
+        const pinA = comp.pins[0];
+        const pinB = comp.pins[1];
+        if (pinA?.connectedHoleId && pinB?.connectedHoleId) {
+          const n1 = rootToNodeId.get(uf.find(pinA.connectedHoleId)) ?? 0;
+          const n2 = rootToNodeId.get(uf.find(pinB.connectedHoleId)) ?? 0;
+          const filamentR = Math.max(5, comp.value);
+          stampConductance(n1, n2, 1 / filamentR);
+        }
+      } else if (comp.type === 'SPEAKER') {
+        const pinA = comp.pins[0];
+        const pinB = comp.pins[1];
+        if (pinA?.connectedHoleId && pinB?.connectedHoleId) {
+          const n1 = rootToNodeId.get(uf.find(pinA.connectedHoleId)) ?? 0;
+          const n2 = rootToNodeId.get(uf.find(pinB.connectedHoleId)) ?? 0;
+          stampConductance(n1, n2, 1 / 8);
+        }
+      } else if (comp.type === 'SWITCH_TACTILE' || comp.type === 'SWITCH_TOGGLE') {
+        const isClosed = comp.state?.isClosed ?? false;
+        const pinA = comp.pins[0];
+        const pinB = comp.pins[1];
+        if (pinA?.connectedHoleId && pinB?.connectedHoleId) {
+          const n1 = rootToNodeId.get(uf.find(pinA.connectedHoleId)) ?? 0;
+          const n2 = rootToNodeId.get(uf.find(pinB.connectedHoleId)) ?? 0;
+          const r = isClosed ? 0.005 : 1e8;
+          stampConductance(n1, n2, 1 / r);
+        }
+      } else if (comp.type === 'INDUCTOR_TOROID') {
+        const pinA = comp.pins[0];
+        const pinB = comp.pins[1];
+        if (pinA?.connectedHoleId && pinB?.connectedHoleId) {
+          const n1 = rootToNodeId.get(uf.find(pinA.connectedHoleId)) ?? 0;
+          const n2 = rootToNodeId.get(uf.find(pinB.connectedHoleId)) ?? 0;
+          stampConductance(n1, n2, 1 / 0.1);
+        }
+      } else if (comp.type === 'CAPACITOR_ELECTROLYTIC' || comp.type === 'CAPACITOR_CERAMIC') {
+        const pinA = comp.pins[0];
+        const pinB = comp.pins[1];
+        if (pinA?.connectedHoleId && pinB?.connectedHoleId) {
+          const n1 = rootToNodeId.get(uf.find(pinA.connectedHoleId)) ?? 0;
+          const n2 = rootToNodeId.get(uf.find(pinB.connectedHoleId)) ?? 0;
+          stampConductance(n1, n2, 1 / 1e7);
+        }
+      }
+    });
+
+    // Stamp Independent Voltage Sources (MNA B and C sub-matrices)
+    vSources.forEach((vs) => {
+      const row = (numNodes - 1) + vs.index;
+      const col = row;
+
+      const ip = vs.nodePos - 1;
+      const ineg = vs.nodeNeg - 1;
+
+      if (ip >= 0) {
+        A[row][ip] = 1;
+        A[ip][col] = 1;
+      }
+      if (ineg >= 0) {
+        A[row][ineg] = -1;
+        A[ineg][col] = -1;
+      }
+
+      z[row] = vs.voltage;
+    });
+
+    // Solve linear system A * x = z using Gaussian elimination with partial pivoting
+    x = solveLinearSystem(A, z);
+
+    // Check diode states against solution
+    let stateChanged = false;
+    components.forEach((comp) => {
+      if (comp.type === 'LED' && comp.health !== 'BURNED_OUT') {
+        const anode = comp.pins.find((p) => p.name === 'ANODE' || p.id === 'l1' || p.id === 'pos');
+        const cathode = comp.pins.find((p) => p.name === 'CATHODE' || p.id === 'l2' || p.id === 'neg');
+        if (anode?.connectedHoleId && cathode?.connectedHoleId) {
+          const nA = rootToNodeId.get(uf.find(anode.connectedHoleId)) ?? 0;
+          const nK = rootToNodeId.get(uf.find(cathode.connectedHoleId)) ?? 0;
+          const vA = nA === 0 ? 0 : x[nA - 1] || 0;
+          const vK = nK === 0 ? 0 : x[nK - 1] || 0;
+          const vf = comp.forwardVoltage ?? 1.9;
+          const vDiff = vA - vK;
+          const currentState = ledStates.get(comp.id) ?? true;
+          if (currentState && vDiff < vf * 0.75) {
+            ledStates.set(comp.id, false);
+            stateChanged = true;
+          } else if (!currentState && vDiff >= vf * 0.85) {
+            ledStates.set(comp.id, true);
+            stateChanged = true;
+          }
+        }
+      }
+    });
+
+    if (!stateChanged) break;
+  }
 
   // Extract node voltages
   const nodeVoltages = new Map<number, number>();
@@ -316,6 +375,8 @@ export function solveCircuit(
       updated.voltageDrop = 0;
       updated.current = 0;
       updated.powerDissipated = 0;
+      updated.isEmitting = false;
+      updated.emissionIntensity = 0;
       return updated;
     }
 
@@ -332,20 +393,27 @@ export function solveCircuit(
         iCurrent = vDrop / Math.max(0.1, updated.value);
       }
     } else if (updated.type === 'LED') {
-      const a = updated.pins.find((p) => p.name === 'ANODE')?.connectedHoleId;
-      const k = updated.pins.find((p) => p.name === 'CATHODE')?.connectedHoleId;
+      const a = updated.pins.find((p) => p.name === 'ANODE' || p.id === 'l1' || p.id === 'pos')?.connectedHoleId;
+      const k = updated.pins.find((p) => p.name === 'CATHODE' || p.id === 'l2' || p.id === 'neg')?.connectedHoleId;
       if (a && k) {
         const va = holeVoltages.get(a) ?? 0;
         const vk = holeVoltages.get(k) ?? 0;
         const forwardBias = va - vk;
-        const vf = updated.forwardVoltage ?? 2.0;
+        const vf = updated.forwardVoltage ?? 1.9;
+        const isConducting = ledStates.get(updated.id) ?? false;
 
-        if (forwardBias > vf * 0.75) {
+        if (isConducting && forwardBias >= vf * 0.8) {
           vDrop = Math.max(0, forwardBias);
-          iCurrent = Math.max(0, (forwardBias - vf * 0.7) / 18);
-          updated.isEmitting = true;
-          updated.emissionIntensity = Math.min(2.5, iCurrent / 0.02); // 20mA is full brightness
+          iCurrent = Math.max(0, (forwardBias - vf) / 18);
+          // If forward bias is near threshold, allow a smooth emission threshold
+          if (forwardBias >= vf * 0.95 && iCurrent < 0.002) {
+            iCurrent = Math.max(0.002, (forwardBias - vf * 0.9) / 25);
+          }
+          updated.isEmitting = iCurrent > 0.0005;
+          updated.emissionIntensity = Math.min(2.5, Math.max(0.2, (iCurrent / 0.015) ** 0.85));
         } else {
+          vDrop = Math.max(0, forwardBias);
+          iCurrent = 0;
           updated.isEmitting = false;
           updated.emissionIntensity = 0;
         }
@@ -384,12 +452,13 @@ export function solveCircuit(
     updated.temperature = ambientTemperature + tempRise;
 
     // Check Overheating and Burnout
-    const maxP = updated.maxPowerRating ?? 0.25; // 0.25W default
-    if (power > maxP * 2.5 || updated.temperature > 160) {
+    const maxP = updated.maxPowerRating ?? (updated.type === 'LED' ? 0.15 : 0.25);
+    const maxCurrent = updated.type === 'LED' ? 0.045 : 2.0;
+    if (power > maxP * 2.5 || updated.temperature > 160 || iCurrent > maxCurrent * 2.0) {
       updated.health = 'BURNED_OUT';
       updated.isEmitting = false;
       updated.emissionIntensity = 0;
-    } else if (power > maxP * 1.2 || updated.temperature > 90) {
+    } else if (power > maxP * 1.2 || updated.temperature > 90 || iCurrent > maxCurrent) {
       updated.health = 'OVERHEATING';
     } else if (power > maxP * 0.7) {
       updated.health = 'WARM';

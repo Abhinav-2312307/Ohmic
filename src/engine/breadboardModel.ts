@@ -220,6 +220,30 @@ export function getHoleDescription(holeId: string): string {
   return `Hole ${holeId}`;
 }
 
+// Height elevation for each component model so leads penetrate into breadboard holes
+export function getComponentDefaultElevation(type: string): number {
+  switch (type) {
+    case 'BATTERY_9V':
+      return 0.0; // Rests on ESD bench mat
+    case 'IC_555':
+      return 0.0055; // DIP-8 pins penetrate 3mm into socket, body sits on surface
+    case 'SWITCH_TACTILE':
+    case 'SWITCH_TOGGLE':
+    case 'BULB_INCANDESCENT':
+      return 0.0065; // Base sits on breadboard, pins penetrate 2.5mm
+    case 'LED':
+      return 0.0068; // Anode/Cathode leads penetrate 3.2mm - 4.7mm into sockets
+    case 'RESISTOR':
+    case 'CAPACITOR_ELECTROLYTIC':
+    case 'CAPACITOR_CERAMIC':
+    case 'POTENTIOMETER':
+    case 'SPEAKER':
+    case 'INDUCTOR_TOROID':
+    default:
+      return 0.0068;
+  }
+}
+
 // Determine target pins for component placement given a starting anchor hole and rotation angle (0 or 90 deg)
 export function getComponentFootprint(
   type: string,
@@ -390,7 +414,7 @@ export function rotateComponent(
 
     return {
       ...comp,
-      position: [midX, midZ, comp.position[2] || 0.012],
+      position: [midX, midZ, comp.position[2] || getComponentDefaultElevation(comp.type)],
       rotation: [0, (newRotDeg * Math.PI) / 180, 0],
       pins: newPins,
     };
@@ -432,7 +456,7 @@ export function moveComponentToHole(
 
   return {
     ...comp,
-    position: [midX, midZ, comp.position[2] || 0.012],
+    position: [midX, midZ, comp.position[2] || getComponentDefaultElevation(comp.type)],
     pins: newPins,
   };
 }

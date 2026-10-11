@@ -16,6 +16,7 @@ import {
   getComponentFootprint,
   getHoleDescription,
   moveComponentToHole,
+  getComponentDefaultElevation,
 } from '../engine/breadboardModel';
 import { WorkbenchTool } from './TopToolbar';
 import { audioEngine } from '../engine/audioEngine';
@@ -51,6 +52,7 @@ interface CircuitWorkbench3DProps {
 
 interface ComponentRecord {
   group: THREE.Group;
+  proceduralMesh?: THREE.Group;
   loadedModel?: THREE.Group;
   selRing: THREE.Mesh;
   light?: THREE.PointLight;
@@ -292,6 +294,7 @@ export default function CircuitWorkbench3D({
   const holeHitboxesRef = useRef<Map<string, THREE.Mesh>>(new Map());
   const componentMeshesRef = useRef<Map<string, THREE.Group>>(new Map());
   const componentRecordsRef = useRef<Map<string, ComponentRecord>>(new Map());
+  const componentsGroupRef = useRef<THREE.Group | null>(null);
   const wireMeshesRef = useRef<THREE.Group | null>(null);
   const wireRecordsRef = useRef<Map<string, WireRecord>>(new Map());
   const dmmLeadsRef = useRef<{ red?: THREE.Group; redHole?: string; black?: THREE.Group; blackHole?: string }>({});
@@ -313,8 +316,8 @@ export default function CircuitWorkbench3D({
   const draggedCompIdRef = useRef<string | null>(null);
   const mouseDownPosRef = useRef({ x: 0, y: 0 });
   const prevMouseRef = useRef({ x: 0, y: 0 });
-  const cameraTargetRef = useRef<THREE.Vector3 | null>(null);
-  const cameraSphericalRef = useRef({ radius: 0.28, theta: Math.PI / 4, phi: Math.PI / 3.2 });
+  const cameraTargetRef = useRef<THREE.Vector3 | null>(new THREE.Vector3(-0.040, 0.012, 0.005));
+  const cameraSphericalRef = useRef({ radius: 0.30, theta: Math.PI / 4.1, phi: Math.PI / 3.2 });
 
   // Update Camera Orbit
   const updateCameraPosition = useCallback(() => {
@@ -362,8 +365,22 @@ export default function CircuitWorkbench3D({
     const width = container.clientWidth;
     const height = container.clientHeight;
 
-    if (!cameraTargetRef.current) cameraTargetRef.current = new THREE.Vector3(0, 0, 0);
-    if (!wireMeshesRef.current) wireMeshesRef.current = new THREE.Group();
+    if (!cameraTargetRef.current) cameraTargetRef.current = new THREE.Vector3(-0.040, 0.012, 0.005);
+    if (wireMeshesRef.current) {
+      while (wireMeshesRef.current.children.length > 0) {
+        wireMeshesRef.current.remove(wireMeshesRef.current.children[0]);
+      }
+    } else {
+      wireMeshesRef.current = new THREE.Group();
+    }
+
+    if (componentsGroupRef.current) {
+      while (componentsGroupRef.current.children.length > 0) {
+        componentsGroupRef.current.remove(componentsGroupRef.current.children[0]);
+      }
+    } else {
+      componentsGroupRef.current = new THREE.Group();
+    }
 
     // Scene
     const scene = new THREE.Scene();
@@ -488,6 +505,11 @@ export default function CircuitWorkbench3D({
       holeHitboxesRef.current.set(hole.id, hitbox);
     });
 
+    // Components Group
+    if (componentsGroupRef.current) {
+      scene.add(componentsGroupRef.current);
+    }
+
     // Wire Meshes Group
     if (wireMeshesRef.current) {
       scene.add(wireMeshesRef.current);
@@ -554,6 +576,29 @@ export default function CircuitWorkbench3D({
       cancelAnimationFrame(animationId);
       window.removeEventListener('resize', handleResize);
       renderer.dispose();
+      if (wireMeshesRef.current) {
+        while (wireMeshesRef.current.children.length > 0) {
+          const c = wireMeshesRef.current.children[0];
+          wireMeshesRef.current.remove(c);
+          c.traverse((m) => {
+            if ((m as THREE.Mesh).geometry) (m as THREE.Mesh).geometry.dispose();
+          });
+        }
+      }
+      if (componentsGroupRef.current) {
+        while (componentsGroupRef.current.children.length > 0) {
+          const c = componentsGroupRef.current.children[0];
+          componentsGroupRef.current.remove(c);
+          c.traverse((m) => {
+            if ((m as THREE.Mesh).geometry) (m as THREE.Mesh).geometry.dispose();
+          });
+        }
+      }
+      componentRecordsRef.current.clear();
+      componentMeshesRef.current.clear();
+      wireRecordsRef.current.clear();
+      dmmLeadsRef.current = {};
+      activeLightsRef.current = [];
     };
   }, [updateCameraPosition]);
 
@@ -604,22 +649,101 @@ export default function CircuitWorkbench3D({
     group.add(instancedHoles);
   };
 
+  // Update material visual states (Emissive LED glow / Filament warmth / Burnout / Overheating)
+  const updateModelMaterials = (model: THREE.Group, comp: CircuitComponent) => {
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        if (mat && mat.isMeshStandardMaterial) {
+          if (comp.health === 'BURNED_OUT') {
+            mat.color.setHex(0x18181b);
+            mat.emissive.setHex(0x000000);
+            mat.emissiveIntensity = 0;
+          } else if (comp.health === 'OVERHEATING') {
+            mat.color.setHex(0x9a3412);
+            mat.emissive.setHex(0x7c2d12);
+            mat.emissiveIntensity = 0.5;
+          } else if (comp.type === 'LED') {
+            // Keep metal pins shiny tin-lead
+            if (mat.name && (mat.name.includes('Tin') || mat.name.includes('Lead') || mat.name.includes('Leg'))) {
+              return;
+            }
+            const isEmitting = (comp as any).isEmitting ?? false;
+            const emissionIntensity = (comp as any).emissionIntensity ?? 0;
+            const colorHex =
+              comp.ledColor === 'GREEN'
+                ? 0x22c55e
+                : comp.ledColor === 'BLUE'
+                ? 0x3b82f6
+                : comp.ledColor === 'YELLOW'
+                ? 0xeab308
+                : 0xef4444;
+            if (isEmitting) {
+              mat.color.setHex(colorHex);
+              mat.emissive.setHex(colorHex);
+              mat.emissiveIntensity = Math.min(3.0, Math.max(0.4, emissionIntensity * 2.2));
+            } else {
+              const offColor =
+                comp.ledColor === 'GREEN'
+                  ? 0x14532d
+                  : comp.ledColor === 'BLUE'
+                  ? 0x1e3a8a
+                  : comp.ledColor === 'YELLOW'
+                  ? 0x713f12
+                  : 0x7f1d1d;
+              mat.color.setHex(offColor);
+              mat.emissive.setHex(0x000000);
+              mat.emissiveIntensity = 0;
+            }
+          } else if (comp.type === 'BULB_INCANDESCENT') {
+            const isEmitting = (comp as any).isEmitting ?? false;
+            const emissionIntensity = (comp as any).emissionIntensity ?? 0;
+            if (isEmitting) {
+              mat.color.setHex(0xfef08a);
+              mat.emissive.setHex(0xf59e0b);
+              mat.emissiveIntensity = Math.min(2.5, emissionIntensity * 1.8);
+            } else {
+              mat.color.setHex(0x52525b);
+              mat.emissive.setHex(0x000000);
+              mat.emissiveIntensity = 0;
+            }
+          }
+        }
+      }
+    });
+  };
+
   // 2. Render & Reconcile Placed Components (Flicker-Free Diffing)
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
 
+    const compContainer = componentsGroupRef.current || scene;
     const currentRecords = componentRecordsRef.current;
     const incomingCompMap = new Map(components.map((c) => [c.id, c]));
 
     // 1. Remove deleted components
     for (const [id, record] of Array.from(currentRecords.entries())) {
       if (!incomingCompMap.has(id)) {
-        scene.remove(record.group);
+        if (record.group.parent) {
+          record.group.parent.remove(record.group);
+        }
+        compContainer.remove(record.group);
         if (record.light) {
           const lIdx = activeLightsRef.current.indexOf(record.light);
           if (lIdx !== -1) activeLightsRef.current.splice(lIdx, 1);
         }
+        record.group.traverse((c) => {
+          if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
+          if ((c as THREE.Mesh).material) {
+            if (Array.isArray((c as THREE.Mesh).material)) {
+              ((c as THREE.Mesh).material as THREE.Material[]).forEach((m) => m.dispose());
+            } else {
+              ((c as THREE.Mesh).material as THREE.Material).dispose();
+            }
+          }
+        });
         currentRecords.delete(id);
         componentMeshesRef.current.delete(id);
       }
@@ -647,7 +771,7 @@ export default function CircuitWorkbench3D({
         });
         const selRing = new THREE.Mesh(selRingGeo, selRingMat);
         selRing.rotation.x = -Math.PI / 2;
-        selRing.position.y = 0.001;
+        selRing.position.y = isBatt ? 0.001 : Math.max(0.001, 0.0089 - comp.position[2]);
         selRing.visible = comp.id === selectedComponentId;
         compGroup.add(selRing);
 
@@ -680,7 +804,7 @@ export default function CircuitWorkbench3D({
         };
         currentRecords.set(comp.id, record);
         componentMeshesRef.current.set(comp.id, compGroup);
-        scene.add(compGroup);
+        compContainer.add(compGroup);
 
         // Attach interactive snap terminals for 9V Battery
         if (comp.type === 'BATTERY_9V') {
@@ -739,11 +863,18 @@ export default function CircuitWorkbench3D({
             (model) => {
               model.traverse((child) => {
                 if ((child as THREE.Mesh).isMesh) {
-                  child.userData = { componentId: comp.id, isCircuitComponent: true };
+                  const m = child as THREE.Mesh;
+                  m.userData = { componentId: comp.id, isCircuitComponent: true };
+                  if (Array.isArray(m.material)) {
+                    m.material = m.material.map((mat) => mat.clone());
+                  } else if (m.material) {
+                    m.material = m.material.clone();
+                  }
                 }
               });
               record!.loadedModel = model;
               compGroup.add(model);
+              updateModelMaterials(model, comp);
             },
             () => {
               const geo = new THREE.BoxGeometry(0.012, 0.006, 0.006);
@@ -759,17 +890,25 @@ export default function CircuitWorkbench3D({
         }
       }
 
+      // Ensure group is attached to active compContainer
+      if (record.group.parent !== compContainer) {
+        compContainer.add(record.group);
+      }
+
       // Smooth position and rotation update
       record.group.position.set(comp.position[0], comp.position[2], comp.position[1]);
       record.group.rotation.set(comp.rotation[0], comp.rotation[1], comp.rotation[2]);
 
       // Selection indicator
       record.selRing.visible = comp.id === selectedComponentId;
+      if (comp.type !== 'BATTERY_9V') {
+        record.selRing.position.y = Math.max(0.001, 0.0089 - comp.position[2]);
+      }
 
       // Light emission update
       if (record.light) {
-        if (comp.health !== 'BURNED_OUT' && comp.current > 0.001) {
-          const target = Math.min(2.5, (comp.current / 0.02) * 1.5);
+        if (comp.health !== 'BURNED_OUT' && (comp as any).isEmitting) {
+          const target = Math.min(2.5, ((comp as any).emissionIntensity || 1.0) * 1.5);
           record.light.userData.targetIntensity = target;
         } else {
           record.light.userData.targetIntensity = 0;
@@ -777,29 +916,26 @@ export default function CircuitWorkbench3D({
         }
       }
 
-      // Health / Burnout visual state update
-      if (record.loadedModel && record.health !== comp.health) {
-        record.health = comp.health;
-        record.loadedModel.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) {
-            if (comp.health === 'BURNED_OUT') {
-              (child as THREE.Mesh).material = new THREE.MeshStandardMaterial({
-                color: 0x18181b,
-                roughness: 0.9,
-                metalness: 0.1,
-              });
-            } else if (comp.health === 'OVERHEATING') {
-              (child as THREE.Mesh).material = new THREE.MeshStandardMaterial({
-                color: 0x9a3412,
-                roughness: 0.6,
-                emissive: 0x7c2d12,
-                emissiveIntensity: 0.4,
-              });
-            }
-          }
-        });
+      // Visual Material State (Emissive LED glow / Filament warmth / Burnout / Overheating)
+      if (record.loadedModel) {
+        updateModelMaterials(record.loadedModel, comp);
       }
     });
+
+    // Sweep any orphaned component groups in compContainer
+    const validCompGroups = new Set<THREE.Object3D>();
+    for (const rec of currentRecords.values()) {
+      validCompGroups.add(rec.group);
+    }
+    for (let i = compContainer.children.length - 1; i >= 0; i--) {
+      const child = compContainer.children[i];
+      if (!validCompGroups.has(child)) {
+        compContainer.remove(child);
+        child.traverse((c) => {
+          if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
+        });
+      }
+    }
 
     // Rebuild active battery terminals cache for raycasting
     const activeTerminals: THREE.Mesh[] = [];
@@ -906,9 +1042,19 @@ export default function CircuitWorkbench3D({
     // 1. Remove deleted wires
     for (const [id, record] of Array.from(currentWires.entries())) {
       if (!incomingWireMap.has(id)) {
+        if (record.group.parent) {
+          record.group.parent.remove(record.group);
+        }
         mainGroup.remove(record.group);
         record.group.traverse((c) => {
           if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
+          if ((c as THREE.Mesh).material) {
+            if (Array.isArray((c as THREE.Mesh).material)) {
+              ((c as THREE.Mesh).material as THREE.Material[]).forEach((m) => m.dispose());
+            } else {
+              ((c as THREE.Mesh).material as THREE.Material).dispose();
+            }
+          }
         });
         currentWires.delete(id);
       }
@@ -921,14 +1067,26 @@ export default function CircuitWorkbench3D({
 
       const existing = currentWires.get(wire.id);
       if (existing && existing.key === wireKey) {
-        // Unchanged - zero re-creation!
+        if (existing.group.parent !== mainGroup) {
+          mainGroup.add(existing.group);
+        }
         return;
       }
 
       if (existing) {
+        if (existing.group.parent) {
+          existing.group.parent.remove(existing.group);
+        }
         mainGroup.remove(existing.group);
         existing.group.traverse((c) => {
           if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
+          if ((c as THREE.Mesh).material) {
+            if (Array.isArray((c as THREE.Mesh).material)) {
+              ((c as THREE.Mesh).material as THREE.Material[]).forEach((m) => m.dispose());
+            } else {
+              ((c as THREE.Mesh).material as THREE.Material).dispose();
+            }
+          }
         });
         currentWires.delete(wire.id);
       }
@@ -949,6 +1107,8 @@ export default function CircuitWorkbench3D({
       ]);
 
       const wireGroup = new THREE.Group();
+      wireGroup.userData = { isWire: true, wireId: wire.id };
+
       const tubeGeo = new THREE.TubeGeometry(curve, 32, isSelected ? 0.0015 : 0.0011, 8, false);
       const tubeMat = new THREE.MeshStandardMaterial({
         color: isSelected ? 0xffffff : wire.color,
@@ -962,6 +1122,13 @@ export default function CircuitWorkbench3D({
       tubeMesh.castShadow = true;
       tubeMesh.userData = { isWire: true, wireId: wire.id };
       wireGroup.add(tubeMesh);
+
+      // Thicker invisible raycast hit proxy for effortless selection clicking
+      const hitProxyGeo = new THREE.TubeGeometry(curve, 16, 0.004, 6, false);
+      const hitProxyMat = new THREE.MeshBasicMaterial({ visible: false });
+      const hitProxy = new THREE.Mesh(hitProxyGeo, hitProxyMat);
+      hitProxy.userData = { isWire: true, wireId: wire.id, isHitProxy: true };
+      wireGroup.add(hitProxy);
 
       // DuPont pins
       const pinGeo = new THREE.BoxGeometry(0.0025, 0.008, 0.0025);
@@ -997,7 +1164,8 @@ export default function CircuitWorkbench3D({
         if (pos) {
           const redGroup = new THREE.Group();
           const pinPos = new THREE.Vector3(pos[0], pos[2], pos[1]);
-          const dmmOrigin = new THREE.Vector3(0.09, 0.02, 0.09);
+          // Plugs into red banana jack of 3D multimeter
+          const dmmOrigin = new THREE.Vector3(0.070, 0.034, 0.093);
           const mid = new THREE.Vector3().addVectors(pinPos, dmmOrigin).multiplyScalar(0.5);
           mid.y += 0.03;
 
@@ -1010,12 +1178,14 @@ export default function CircuitWorkbench3D({
             emissiveIntensity: 0.2,
           });
           const leadMesh = new THREE.Mesh(tubeGeo, tubeMat);
+          leadMesh.userData = { isDmmProbe: true, probeType: 'RED' };
           redGroup.add(leadMesh);
 
           const probeGeo = new THREE.CylinderGeometry(0.002, 0.0008, 0.02, 12);
           const probeMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3 });
           const probe = new THREE.Mesh(probeGeo, probeMat);
           probe.position.set(pinPos.x, pinPos.y + 0.01, pinPos.z);
+          probe.userData = { isDmmProbe: true, probeType: 'RED' };
           redGroup.add(probe);
 
           mainGroup.add(redGroup);
@@ -1040,7 +1210,8 @@ export default function CircuitWorkbench3D({
         if (pos) {
           const blackGroup = new THREE.Group();
           const pinPos = new THREE.Vector3(pos[0], pos[2], pos[1]);
-          const dmmOrigin = new THREE.Vector3(0.08, 0.02, 0.095);
+          // Plugs into black COM jack of 3D multimeter
+          const dmmOrigin = new THREE.Vector3(0.088, 0.034, 0.093);
           const mid = new THREE.Vector3().addVectors(pinPos, dmmOrigin).multiplyScalar(0.5);
           mid.y += 0.025;
 
@@ -1051,17 +1222,44 @@ export default function CircuitWorkbench3D({
             roughness: 0.5,
           });
           const leadMesh = new THREE.Mesh(tubeGeo, tubeMat);
+          leadMesh.userData = { isDmmProbe: true, probeType: 'BLACK' };
           blackGroup.add(leadMesh);
 
           const probeGeo = new THREE.CylinderGeometry(0.002, 0.0008, 0.02, 12);
           const probeMat = new THREE.MeshStandardMaterial({ color: 0x27272a, roughness: 0.4 });
           const probe = new THREE.Mesh(probeGeo, probeMat);
           probe.position.set(pinPos.x, pinPos.y + 0.01, pinPos.z);
+          probe.userData = { isDmmProbe: true, probeType: 'BLACK' };
           blackGroup.add(probe);
 
           mainGroup.add(blackGroup);
           dmmLeadsRef.current.black = blackGroup;
         }
+      }
+    }
+
+    // 5. Sweep any orphaned wire groups in mainGroup that don't belong to any active wire or DMM lead
+    const validWireGroups = new Set<THREE.Object3D>();
+    for (const record of currentWires.values()) {
+      validWireGroups.add(record.group);
+    }
+    if (dmmLeadsRef.current.red) validWireGroups.add(dmmLeadsRef.current.red);
+    if (dmmLeadsRef.current.black) validWireGroups.add(dmmLeadsRef.current.black);
+
+    for (let i = mainGroup.children.length - 1; i >= 0; i--) {
+      const child = mainGroup.children[i];
+      if (!validWireGroups.has(child)) {
+        mainGroup.remove(child);
+        child.traverse((c) => {
+          if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
+          if ((c as THREE.Mesh).material) {
+            if (Array.isArray((c as THREE.Mesh).material)) {
+              ((c as THREE.Mesh).material as THREE.Material[]).forEach((m) => m.dispose());
+            } else {
+              ((c as THREE.Mesh).material as THREE.Material).dispose();
+            }
+          }
+        });
       }
     }
   }, [wires, selectedWireId, multimeter.redProbeHoleId, multimeter.blackProbeHoleId, components]);
@@ -1177,7 +1375,8 @@ export default function CircuitWorkbench3D({
               const p1 = getHolePosition(fp.holeIds[0]);
               const p2 = getHolePosition(fp.holeIds[fp.holeIds.length - 1]);
               if (p1 && p2) {
-                record.group.position.set((p1[0] + p2[0]) / 2, 0.012, (p1[1] + p2[1]) / 2);
+                const compY = getComponentDefaultElevation(draggedComp.type);
+                record.group.position.set((p1[0] + p2[0]) / 2, compY, (p1[1] + p2[1]) / 2);
               }
               setStatusMessage(`Moving ${draggedComp.name} ➔ Holes [${fp.holeIds.join(', ')}] • Release to snap`);
             }
@@ -1309,7 +1508,8 @@ export default function CircuitWorkbench3D({
         if (firstHolePos && lastHolePos) {
           const midX = (firstHolePos[0] + lastHolePos[0]) / 2;
           const midZ = (firstHolePos[1] + lastHolePos[1]) / 2;
-          ghost.position.set(midX, 0.012, midZ);
+          const compY = getComponentDefaultElevation(placingComponent.type);
+          ghost.position.set(midX, compY, midZ);
           ghost.rotation.set(0, (placementRotationDeg * Math.PI) / 180, 0);
         }
 
@@ -1317,7 +1517,8 @@ export default function CircuitWorkbench3D({
           `Place ${placingComponent.type} on [${fp.holeIds.join(', ')}] • Press 'R' to Rotate • Click to Attach`
         );
       } else {
-        ghost.position.set(planeIntersect.x, 0.012, planeIntersect.z);
+        const compY = getComponentDefaultElevation(placingComponent.type);
+        ghost.position.set(planeIntersect.x, compY, planeIntersect.z);
         setStatusMessage(`Hover over breadboard holes to place ${placingComponent.type}`);
       }
       return;
@@ -1518,25 +1719,37 @@ export default function CircuitWorkbench3D({
       const intersects = raycaster.intersectObjects(allObjects, true);
 
       if (intersects.length > 0) {
-        let hit = intersects[0].object;
-        while (hit.parent && !hit.userData.componentId && !hit.userData.wireId) {
-          hit = hit.parent;
-        }
+        for (const intersect of intersects) {
+          let hit = intersect.object;
+          while (hit.parent && !hit.userData.componentId && !hit.userData.wireId && !hit.userData.isDmmProbe) {
+            hit = hit.parent;
+          }
 
-        if (hit.userData.componentId) {
-          const comp = components.find((c) => c.id === hit.userData.componentId) || null;
-          audioEngine.playKnobClick();
-          onSelectComponent(comp);
-          onSelectWire(null);
-          return;
-        }
+          if (hit.userData.isDmmProbe) {
+            audioEngine.playKnobClick();
+            onSetProbeHole(hit.userData.probeType, '');
+            return;
+          }
 
-        if (hit.userData.wireId) {
-          const wire = wires.find((w) => w.id === hit.userData.wireId) || null;
-          audioEngine.playKnobClick();
-          onSelectWire(wire);
-          onSelectComponent(null);
-          return;
+          if (hit.userData.componentId) {
+            const comp = components.find((c) => c.id === hit.userData.componentId) || null;
+            if (comp) {
+              audioEngine.playKnobClick();
+              onSelectComponent(comp);
+              onSelectWire(null);
+              return;
+            }
+          }
+
+          if (hit.userData.wireId) {
+            const wire = wires.find((w) => w.id === hit.userData.wireId) || null;
+            if (wire) {
+              audioEngine.playKnobClick();
+              onSelectWire(wire);
+              onSelectComponent(null);
+              return;
+            }
+          }
         }
       }
 
