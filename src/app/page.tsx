@@ -32,6 +32,7 @@ import {
   rotateComponent,
   nudgeComponent,
   updateWiresForComponent,
+  getComponentDefaultElevation,
 } from '../engine/breadboardModel';
 import { audioEngine } from '../engine/audioEngine';
 import ControlsGuideModal from '../components/ControlsGuideModal';
@@ -68,10 +69,10 @@ export default function OhmicWorkbenchPage() {
     reading: 0,
     unit: 'V',
     isContinuous: false,
-    redProbeHoleId: 'E19',
-    blackProbeHoleId: 'TOP_NEG_5',
+    redProbeHoleId: undefined,
+    blackProbeHoleId: undefined,
   });
-  const [instrumentTab, setInstrumentTab] = useState<'DMM' | 'SCOPE' | 'NONE'>('DMM');
+  const [instrumentTab, setInstrumentTab] = useState<'DMM' | 'SCOPE' | 'NONE'>('NONE');
 
   // Simulation Solve Loop (20Hz real-time MNA solver)
   useEffect(() => {
@@ -299,7 +300,7 @@ export default function OhmicWorkbenchPage() {
       // Calculate 3D position
       let x = 0;
       let z = 0;
-      let y = 0.012;
+      let y = getComponentDefaultElevation(type);
 
       if (positionOverride) {
         x = positionOverride[0];
