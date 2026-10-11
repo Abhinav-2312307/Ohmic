@@ -137,6 +137,11 @@ export function solveCircuit(
     }
   });
 
+  // If there are no independent voltage sources, there is no energy in the circuit
+  if (vSources.length === 0) {
+    return generateEmptyResult(components, wires, multimeter, ambientTemperature);
+  }
+
   const matrixSize = (numNodes - 1) + vSources.length;
 
   if (matrixSize <= 0) {
@@ -145,10 +150,11 @@ export function solveCircuit(
   }
 
   // Multi-pass diode solver to determine which LEDs/Diodes are forward-conducting
+  // Physical initial state is ALWAYS FALSE (non-conducting) so diodes never act as phantom energy sources
   const ledStates = new Map<string, boolean>();
   components.forEach((comp) => {
     if (comp.type === 'LED' && comp.health !== 'BURNED_OUT') {
-      ledStates.set(comp.id, true); // initial guess: forward-conducting
+      ledStates.set(comp.id, false); // initial guess: non-conducting
     }
   });
 
@@ -394,8 +400,9 @@ export function solveCircuit(
         const vk = holeVoltages.get(k) ?? 0;
         const forwardBias = va - vk;
         const vf = updated.forwardVoltage ?? 1.9;
+        const isConducting = ledStates.get(updated.id) ?? false;
 
-        if (forwardBias >= vf * 0.8) {
+        if (isConducting && forwardBias >= vf * 0.8) {
           vDrop = Math.max(0, forwardBias);
           iCurrent = Math.max(0, (forwardBias - vf) / 18);
           // If forward bias is near threshold, allow a smooth emission threshold

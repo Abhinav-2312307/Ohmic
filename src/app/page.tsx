@@ -140,30 +140,43 @@ export default function OhmicWorkbenchPage() {
     });
   }, []);
 
+  // Unified Immediate Circuit Solver & State Synchronizer
+  const applyCircuitUpdate = useCallback(
+    (newComps: CircuitComponent[], newWires: JumperWire[]) => {
+      const result = solveCircuit(newComps, newWires, multimeter, ambientTemperature);
+      setComponents(result.components);
+      setWires(result.wires);
+      setMultimeter(result.multimeter);
+    },
+    [multimeter, ambientTemperature]
+  );
+
   // Deletion Helpers
-  const deleteComponentAndWires = useCallback((id: string) => {
-    setComponents((prev) => prev.filter((c) => c.id !== id));
-    // Clean up any jumper wires attached directly to this component's terminals
-    setWires((prev) =>
-      prev.filter(
+  const deleteComponentAndWires = useCallback(
+    (id: string) => {
+      const nextComponents = components.filter((c) => c.id !== id);
+      const nextWires = wires.filter(
         (w) =>
           !w.startHoleId.startsWith(`${id}:`) &&
           !w.endHoleId.startsWith(`${id}:`)
-      )
-    );
-    setSelectedComponentId(null);
-    audioEngine.playPopSound();
-  }, []);
+      );
+      applyCircuitUpdate(nextComponents, nextWires);
+      setSelectedComponentId(null);
+      audioEngine.playPopSound();
+    },
+    [components, wires, applyCircuitUpdate]
+  );
 
   const handleDeleteSelected = useCallback(() => {
     if (selectedComponentId) {
       deleteComponentAndWires(selectedComponentId);
     } else if (selectedWireId) {
-      setWires((prev) => prev.filter((w) => w.id !== selectedWireId));
+      const nextWires = wires.filter((w) => w.id !== selectedWireId);
+      applyCircuitUpdate(components, nextWires);
       setSelectedWireId(null);
       audioEngine.playPopSound();
     }
-  }, [selectedComponentId, selectedWireId, deleteComponentAndWires]);
+  }, [selectedComponentId, selectedWireId, deleteComponentAndWires, components, wires, applyCircuitUpdate]);
 
   // Global Keyboard Shortcuts
   useEffect(() => {
@@ -283,11 +296,12 @@ export default function OhmicWorkbenchPage() {
         voltage: 0,
       };
 
-      setWires((prev) => [...prev, newWire]);
+      const nextWires = [...wires, newWire];
+      applyCircuitUpdate(components, nextWires);
       setSelectedWireId(newWire.id);
       setSelectedComponentId(null);
     },
-    [components]
+    [components, wires, applyCircuitUpdate]
   );
 
   // Component Placement Handler
@@ -436,28 +450,27 @@ export default function OhmicWorkbenchPage() {
         health: 'NORMAL',
       };
 
-      setComponents((prev) => [...prev, newComp]);
+      const nextComponents = [...components, newComp];
+      applyCircuitUpdate(nextComponents, wires);
       setSelectedComponentId(id);
       setSelectedWireId(null);
       setPlacingComponent(null);
       setActiveTool('SELECT');
     },
-    [ambientTemperature]
+    [components, wires, ambientTemperature, applyCircuitUpdate]
   );
 
 
   // Select Preset Handler
   const handleSelectPreset = (preset: PresetCircuit) => {
-    setComponents(preset.components);
-    setWires(preset.wires);
+    applyCircuitUpdate(preset.components, preset.wires);
     setSelectedComponentId(null);
     setSelectedWireId(null);
   };
 
   // Clear Canvas Handler
   const handleClear = () => {
-    setComponents([]);
-    setWires([]);
+    applyCircuitUpdate([], []);
     setSelectedComponentId(null);
     setSelectedWireId(null);
   };
@@ -570,7 +583,8 @@ export default function OhmicWorkbenchPage() {
             deleteComponentAndWires(id);
           }}
           onDeleteWire={(id) => {
-            setWires((prev) => prev.filter((w) => w.id !== id));
+            const nextWires = wires.filter((w) => w.id !== id);
+            applyCircuitUpdate(components, nextWires);
             setSelectedWireId(null);
             audioEngine.playPopSound();
           }}
