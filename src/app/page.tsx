@@ -140,26 +140,30 @@ export default function OhmicWorkbenchPage() {
     });
   }, []);
 
-  // Deletion Handler
+  // Deletion Helpers
+  const deleteComponentAndWires = useCallback((id: string) => {
+    setComponents((prev) => prev.filter((c) => c.id !== id));
+    // Clean up any jumper wires attached directly to this component's terminals
+    setWires((prev) =>
+      prev.filter(
+        (w) =>
+          !w.startHoleId.startsWith(`${id}:`) &&
+          !w.endHoleId.startsWith(`${id}:`)
+      )
+    );
+    setSelectedComponentId(null);
+    audioEngine.playPopSound();
+  }, []);
+
   const handleDeleteSelected = useCallback(() => {
     if (selectedComponentId) {
-      setComponents((prev) => prev.filter((c) => c.id !== selectedComponentId));
-      // Also clean up any jumper wires attached directly to this component
-      setWires((prev) =>
-        prev.filter(
-          (w) =>
-            !w.startHoleId.startsWith(`${selectedComponentId}:`) &&
-            !w.endHoleId.startsWith(`${selectedComponentId}:`)
-        )
-      );
-      setSelectedComponentId(null);
-      audioEngine.playPopSound();
+      deleteComponentAndWires(selectedComponentId);
     } else if (selectedWireId) {
       setWires((prev) => prev.filter((w) => w.id !== selectedWireId));
       setSelectedWireId(null);
       audioEngine.playPopSound();
     }
-  }, [selectedComponentId, selectedWireId]);
+  }, [selectedComponentId, selectedWireId, deleteComponentAndWires]);
 
   // Global Keyboard Shortcuts
   useEffect(() => {
@@ -563,9 +567,7 @@ export default function OhmicWorkbenchPage() {
             )
           }
           onDeleteComponent={(id) => {
-            setComponents((prev) => prev.filter((c) => c.id !== id));
-            setSelectedComponentId(null);
-            audioEngine.playPopSound();
+            deleteComponentAndWires(id);
           }}
           onDeleteWire={(id) => {
             setWires((prev) => prev.filter((w) => w.id !== id));

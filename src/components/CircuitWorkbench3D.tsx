@@ -366,8 +366,21 @@ export default function CircuitWorkbench3D({
     const height = container.clientHeight;
 
     if (!cameraTargetRef.current) cameraTargetRef.current = new THREE.Vector3(-0.040, 0.012, 0.005);
-    if (!wireMeshesRef.current) wireMeshesRef.current = new THREE.Group();
-    if (!componentsGroupRef.current) componentsGroupRef.current = new THREE.Group();
+    if (wireMeshesRef.current) {
+      while (wireMeshesRef.current.children.length > 0) {
+        wireMeshesRef.current.remove(wireMeshesRef.current.children[0]);
+      }
+    } else {
+      wireMeshesRef.current = new THREE.Group();
+    }
+
+    if (componentsGroupRef.current) {
+      while (componentsGroupRef.current.children.length > 0) {
+        componentsGroupRef.current.remove(componentsGroupRef.current.children[0]);
+      }
+    } else {
+      componentsGroupRef.current = new THREE.Group();
+    }
 
     // Scene
     const scene = new THREE.Scene();
@@ -563,9 +576,28 @@ export default function CircuitWorkbench3D({
       cancelAnimationFrame(animationId);
       window.removeEventListener('resize', handleResize);
       renderer.dispose();
+      if (wireMeshesRef.current) {
+        while (wireMeshesRef.current.children.length > 0) {
+          const c = wireMeshesRef.current.children[0];
+          wireMeshesRef.current.remove(c);
+          c.traverse((m) => {
+            if ((m as THREE.Mesh).geometry) (m as THREE.Mesh).geometry.dispose();
+          });
+        }
+      }
+      if (componentsGroupRef.current) {
+        while (componentsGroupRef.current.children.length > 0) {
+          const c = componentsGroupRef.current.children[0];
+          componentsGroupRef.current.remove(c);
+          c.traverse((m) => {
+            if ((m as THREE.Mesh).geometry) (m as THREE.Mesh).geometry.dispose();
+          });
+        }
+      }
       componentRecordsRef.current.clear();
       componentMeshesRef.current.clear();
       wireRecordsRef.current.clear();
+      dmmLeadsRef.current = {};
       activeLightsRef.current = [];
     };
   }, [updateCameraPosition]);
@@ -694,11 +726,24 @@ export default function CircuitWorkbench3D({
     // 1. Remove deleted components
     for (const [id, record] of Array.from(currentRecords.entries())) {
       if (!incomingCompMap.has(id)) {
+        if (record.group.parent) {
+          record.group.parent.remove(record.group);
+        }
         compContainer.remove(record.group);
         if (record.light) {
           const lIdx = activeLightsRef.current.indexOf(record.light);
           if (lIdx !== -1) activeLightsRef.current.splice(lIdx, 1);
         }
+        record.group.traverse((c) => {
+          if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
+          if ((c as THREE.Mesh).material) {
+            if (Array.isArray((c as THREE.Mesh).material)) {
+              ((c as THREE.Mesh).material as THREE.Material[]).forEach((m) => m.dispose());
+            } else {
+              ((c as THREE.Mesh).material as THREE.Material).dispose();
+            }
+          }
+        });
         currentRecords.delete(id);
         componentMeshesRef.current.delete(id);
       }
@@ -877,6 +922,21 @@ export default function CircuitWorkbench3D({
       }
     });
 
+    // Sweep any orphaned component groups in compContainer
+    const validCompGroups = new Set<THREE.Object3D>();
+    for (const rec of currentRecords.values()) {
+      validCompGroups.add(rec.group);
+    }
+    for (let i = compContainer.children.length - 1; i >= 0; i--) {
+      const child = compContainer.children[i];
+      if (!validCompGroups.has(child)) {
+        compContainer.remove(child);
+        child.traverse((c) => {
+          if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
+        });
+      }
+    }
+
     // Rebuild active battery terminals cache for raycasting
     const activeTerminals: THREE.Mesh[] = [];
     currentRecords.forEach((rec) => {
@@ -982,9 +1042,19 @@ export default function CircuitWorkbench3D({
     // 1. Remove deleted wires
     for (const [id, record] of Array.from(currentWires.entries())) {
       if (!incomingWireMap.has(id)) {
+        if (record.group.parent) {
+          record.group.parent.remove(record.group);
+        }
         mainGroup.remove(record.group);
         record.group.traverse((c) => {
           if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
+          if ((c as THREE.Mesh).material) {
+            if (Array.isArray((c as THREE.Mesh).material)) {
+              ((c as THREE.Mesh).material as THREE.Material[]).forEach((m) => m.dispose());
+            } else {
+              ((c as THREE.Mesh).material as THREE.Material).dispose();
+            }
+          }
         });
         currentWires.delete(id);
       }
@@ -1004,9 +1074,19 @@ export default function CircuitWorkbench3D({
       }
 
       if (existing) {
+        if (existing.group.parent) {
+          existing.group.parent.remove(existing.group);
+        }
         mainGroup.remove(existing.group);
         existing.group.traverse((c) => {
           if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
+          if ((c as THREE.Mesh).material) {
+            if (Array.isArray((c as THREE.Mesh).material)) {
+              ((c as THREE.Mesh).material as THREE.Material[]).forEach((m) => m.dispose());
+            } else {
+              ((c as THREE.Mesh).material as THREE.Material).dispose();
+            }
+          }
         });
         currentWires.delete(wire.id);
       }
@@ -1027,6 +1107,8 @@ export default function CircuitWorkbench3D({
       ]);
 
       const wireGroup = new THREE.Group();
+      wireGroup.userData = { isWire: true, wireId: wire.id };
+
       const tubeGeo = new THREE.TubeGeometry(curve, 32, isSelected ? 0.0015 : 0.0011, 8, false);
       const tubeMat = new THREE.MeshStandardMaterial({
         color: isSelected ? 0xffffff : wire.color,
@@ -1040,6 +1122,13 @@ export default function CircuitWorkbench3D({
       tubeMesh.castShadow = true;
       tubeMesh.userData = { isWire: true, wireId: wire.id };
       wireGroup.add(tubeMesh);
+
+      // Thicker invisible raycast hit proxy for effortless selection clicking
+      const hitProxyGeo = new THREE.TubeGeometry(curve, 16, 0.004, 6, false);
+      const hitProxyMat = new THREE.MeshBasicMaterial({ visible: false });
+      const hitProxy = new THREE.Mesh(hitProxyGeo, hitProxyMat);
+      hitProxy.userData = { isWire: true, wireId: wire.id, isHitProxy: true };
+      wireGroup.add(hitProxy);
 
       // DuPont pins
       const pinGeo = new THREE.BoxGeometry(0.0025, 0.008, 0.0025);
@@ -1146,6 +1235,31 @@ export default function CircuitWorkbench3D({
           mainGroup.add(blackGroup);
           dmmLeadsRef.current.black = blackGroup;
         }
+      }
+    }
+
+    // 5. Sweep any orphaned wire groups in mainGroup that don't belong to any active wire or DMM lead
+    const validWireGroups = new Set<THREE.Object3D>();
+    for (const record of currentWires.values()) {
+      validWireGroups.add(record.group);
+    }
+    if (dmmLeadsRef.current.red) validWireGroups.add(dmmLeadsRef.current.red);
+    if (dmmLeadsRef.current.black) validWireGroups.add(dmmLeadsRef.current.black);
+
+    for (let i = mainGroup.children.length - 1; i >= 0; i--) {
+      const child = mainGroup.children[i];
+      if (!validWireGroups.has(child)) {
+        mainGroup.remove(child);
+        child.traverse((c) => {
+          if ((c as THREE.Mesh).geometry) (c as THREE.Mesh).geometry.dispose();
+          if ((c as THREE.Mesh).material) {
+            if (Array.isArray((c as THREE.Mesh).material)) {
+              ((c as THREE.Mesh).material as THREE.Material[]).forEach((m) => m.dispose());
+            } else {
+              ((c as THREE.Mesh).material as THREE.Material).dispose();
+            }
+          }
+        });
       }
     }
   }, [wires, selectedWireId, multimeter.redProbeHoleId, multimeter.blackProbeHoleId, components]);
@@ -1605,31 +1719,37 @@ export default function CircuitWorkbench3D({
       const intersects = raycaster.intersectObjects(allObjects, true);
 
       if (intersects.length > 0) {
-        let hit = intersects[0].object;
-        while (hit.parent && !hit.userData.componentId && !hit.userData.wireId && !hit.userData.isDmmProbe) {
-          hit = hit.parent;
-        }
+        for (const intersect of intersects) {
+          let hit = intersect.object;
+          while (hit.parent && !hit.userData.componentId && !hit.userData.wireId && !hit.userData.isDmmProbe) {
+            hit = hit.parent;
+          }
 
-        if (hit.userData.isDmmProbe) {
-          audioEngine.playKnobClick();
-          onSetProbeHole(hit.userData.probeType, '');
-          return;
-        }
+          if (hit.userData.isDmmProbe) {
+            audioEngine.playKnobClick();
+            onSetProbeHole(hit.userData.probeType, '');
+            return;
+          }
 
-        if (hit.userData.componentId) {
-          const comp = components.find((c) => c.id === hit.userData.componentId) || null;
-          audioEngine.playKnobClick();
-          onSelectComponent(comp);
-          onSelectWire(null);
-          return;
-        }
+          if (hit.userData.componentId) {
+            const comp = components.find((c) => c.id === hit.userData.componentId) || null;
+            if (comp) {
+              audioEngine.playKnobClick();
+              onSelectComponent(comp);
+              onSelectWire(null);
+              return;
+            }
+          }
 
-        if (hit.userData.wireId) {
-          const wire = wires.find((w) => w.id === hit.userData.wireId) || null;
-          audioEngine.playKnobClick();
-          onSelectWire(wire);
-          onSelectComponent(null);
-          return;
+          if (hit.userData.wireId) {
+            const wire = wires.find((w) => w.id === hit.userData.wireId) || null;
+            if (wire) {
+              audioEngine.playKnobClick();
+              onSelectWire(wire);
+              onSelectComponent(null);
+              return;
+            }
+          }
         }
       }
 
