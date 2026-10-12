@@ -677,11 +677,18 @@ export default function OhmicWorkbenchPage() {
         onRotateSelected={selectedComponentId ? handleRotateSelected : undefined}
         onDeleteSelected={selectedComponentId || selectedWireId ? handleDeleteSelected : undefined}
         hasSelection={!!(selectedComponentId || selectedWireId)}
+        selectedItemName={selectedComp?.name || (selectedWire ? 'Jumper Wire' : null)}
+        selectedItemType={selectedComp ? 'COMPONENT' : (selectedWire ? 'WIRE' : null)}
         isDrawerOpen={isDrawerOpen}
         onToggleDrawer={() => setIsDrawerOpen(!isDrawerOpen)}
         onOpenControlsGuide={() => setIsControlsGuideOpen(true)}
         isDevModeOpen={isDevModeOpen}
         onToggleDevMode={() => setIsDevModeOpen(!isDevModeOpen)}
+        instrumentTab={instrumentTab}
+        onToggleInstrument={(tab) => setInstrumentTab(instrumentTab === tab ? 'NONE' : tab)}
+        components={components}
+        wires={wires}
+        onApplyCompiledCircuit={handleApplyCompiledCircuit}
       />
 
       {/* Main Full-Screen 3D Workspace */}
