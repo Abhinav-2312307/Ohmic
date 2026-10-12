@@ -13,6 +13,7 @@ interface PropertyInspectorProps {
   onDeleteComponent: (id: string) => void;
   onDeleteWire?: (id: string) => void;
   onRotateComponent?: (id: string, direction?: 'CW' | 'CCW') => void;
+  onResetHealth?: (id: string) => void;
   onClose: () => void;
 }
 
@@ -24,6 +25,7 @@ export default function PropertyInspector({
   onDeleteComponent,
   onDeleteWire,
   onRotateComponent,
+  onResetHealth,
   onClose,
 }: PropertyInspectorProps) {
   if (!selectedComponent && !selectedWire) return null;
@@ -103,7 +105,7 @@ export default function PropertyInspector({
                   onRotateComponent(c.id, 'CCW');
                 }}
                 className="p-1 text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 rounded transition-all"
-                title="Rotate Counter-Clockwise 90° (← Arrow Key)"
+                title="Rotate Counter-Clockwise 90° (Shift+R)"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
@@ -114,7 +116,7 @@ export default function PropertyInspector({
                   onRotateComponent(c.id, 'CW');
                 }}
                 className="p-1 text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 rounded transition-all"
-                title="Rotate Clockwise 90° (→ Arrow Key or R)"
+                title="Rotate Clockwise 90° (R)"
               >
                 <RotateCw className="w-3.5 h-3.5" />
               </button>
@@ -154,12 +156,25 @@ export default function PropertyInspector({
 
       {/* Burnout Warning */}
       {isBurned && (
-        <div className="my-3 p-3 bg-rose-950/40 border border-rose-500/40 rounded-xl flex items-center gap-2.5 text-rose-300">
-          <Flame className="w-5 h-5 text-rose-500 shrink-0 animate-bounce" />
-          <div className="text-xs">
-            <p className="font-bold">COMPONENT DESTROYED</p>
-            <p className="text-[11px] text-rose-400">Thermal overload (P &gt; Pmax). Open-circuit failure.</p>
+        <div className="my-3 p-3 bg-rose-950/40 border border-rose-500/40 rounded-xl flex flex-col gap-2.5 text-rose-300">
+          <div className="flex items-center gap-2.5">
+            <Flame className="w-5 h-5 text-rose-500 shrink-0 animate-bounce" />
+            <div className="text-xs">
+              <p className="font-bold">COMPONENT DESTROYED</p>
+              <p className="text-[11px] text-rose-400">Thermal overload (P &gt; Pmax). Open-circuit failure.</p>
+            </div>
           </div>
+          {onResetHealth && (
+            <button
+              onClick={() => {
+                audioEngine.playSnapSound();
+                onResetHealth(c.id);
+              }}
+              className="w-full py-2 bg-rose-500 hover:bg-rose-400 text-zinc-950 rounded-lg text-xs font-mono font-bold transition-all shadow-md shadow-rose-500/20"
+            >
+              🔄 REPLACE WITH FRESH COMPONENT
+            </button>
+          )}
         </div>
       )}
 

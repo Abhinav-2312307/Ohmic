@@ -139,7 +139,7 @@ export function getTerminalOrHolePosition(
     const [compId, terminal] = id.split(':');
     const comp = components.find((c) => c.id === compId);
     if (comp) {
-      if (comp.type === 'BATTERY_9V') {
+      if (comp.type === 'BATTERY_9V' || comp.type === 'DC_SOURCE') {
         const isPos = terminal === 'pos' || terminal === '+';
         const sign = isPos ? 1 : -1;
         const rotY = comp.rotation ? comp.rotation[1] : 0;
@@ -224,12 +224,15 @@ export function getHoleDescription(holeId: string): string {
 export function getComponentDefaultElevation(type: string): number {
   switch (type) {
     case 'BATTERY_9V':
+    case 'DC_SOURCE':
       return 0.0; // Rests on ESD bench mat
     case 'IC_555':
+    case 'DIP8_555':
       return 0.0055; // DIP-8 pins penetrate 3mm into socket, body sits on surface
     case 'SWITCH_TACTILE':
     case 'SWITCH_TOGGLE':
     case 'BULB_INCANDESCENT':
+    case 'DISPLAY_7SEG':
       return 0.0065; // Base sits on breadboard, pins penetrate 2.5mm
     case 'LED':
       return 0.0068; // Anode/Cathode leads penetrate 3.2mm - 4.7mm into sockets
@@ -334,7 +337,8 @@ export function getComponentFootprint(
       break;
     }
 
-    case 'SWITCH_TACTILE': {
+    case 'SWITCH_TACTILE':
+    case 'SWITCH_TOGGLE': {
       // Spans across the trough: Row E to Row F
       const targetId = startHole.row === 'E' ? `F${currentCol}` : startHole.row === 'F' ? `E${currentCol}` : `${startHole.row}${currentCol + 2}`;
       if (BREADBOARD_HOLES.has(targetId)) {
@@ -355,8 +359,44 @@ export function getComponentFootprint(
       break;
     }
 
-    case 'BATTERY_9V': {
-      // 9V Battery rests outside the board on the bench mat; connect wires to its snap terminals
+    case 'DIP8_555':
+    case 'IC_555': {
+      // DIP-8 straddles the central trough across Row E and Row F
+      const col = Math.min(60, Math.max(1, currentCol));
+      const holeIds = [
+        `E${col}`,
+        `E${col + 1}`,
+        `E${col + 2}`,
+        `E${col + 3}`,
+        `F${col}`,
+        `F${col + 1}`,
+        `F${col + 2}`,
+        `F${col + 3}`,
+      ];
+      return { holeIds, isValid: true };
+    }
+
+    case 'DISPLAY_7SEG': {
+      // 10-pin display package straddles trough across Row E and Row F
+      const col = Math.min(59, Math.max(1, currentCol));
+      const holeIds = [
+        `E${col}`,
+        `E${col + 1}`,
+        `E${col + 2}`,
+        `E${col + 3}`,
+        `E${col + 4}`,
+        `F${col}`,
+        `F${col + 1}`,
+        `F${col + 2}`,
+        `F${col + 3}`,
+        `F${col + 4}`,
+      ];
+      return { holeIds, isValid: true };
+    }
+
+    case 'BATTERY_9V':
+    case 'DC_SOURCE': {
+      // Voltage sources rest outside the board on the bench mat; connect wires to terminals
       return { holeIds: [], isValid: true };
     }
   }

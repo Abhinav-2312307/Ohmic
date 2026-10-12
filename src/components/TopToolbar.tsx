@@ -35,6 +35,7 @@ interface TopToolbarProps {
   onToggleMute: () => void;
   onClear: () => void;
 
+  activePresetId?: string;
   activeTool: WorkbenchTool;
   onSelectTool: (tool: WorkbenchTool) => void;
   onRotateSelected?: (direction: 'CW' | 'CCW') => void;
@@ -67,6 +68,7 @@ export default function TopToolbar({
   isMuted,
   onToggleMute,
   onClear,
+  activePresetId,
   activeTool,
   onSelectTool,
   onRotateSelected,
@@ -115,7 +117,7 @@ export default function TopToolbar({
                 const selected = presets.find((p) => p.id === e.target.value);
                 if (selected) onSelectPreset(selected);
               }}
-              defaultValue=""
+              value={activePresetId || ''}
               className="bg-transparent text-zinc-200 text-xs font-mono focus:outline-none cursor-pointer pr-4"
             >
               <option value="" disabled className="bg-zinc-900 text-zinc-400">
@@ -203,19 +205,19 @@ export default function TopToolbar({
             <button
               onClick={() => onRotateSelected('CCW')}
               className="flex items-center gap-1 px-2 py-1 rounded text-xs font-mono text-zinc-300 hover:text-amber-300 hover:bg-zinc-800 transition-all"
-              title="Rotate Counter-Clockwise 90° (← Arrow Key)"
+              title="Rotate Counter-Clockwise 90° (Shift+R)"
             >
               <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
-              <span>←</span>
+              <span>↺</span>
             </button>
             <div className="w-px h-3 bg-white/[0.1] mx-0.5" />
             <button
               onClick={() => onRotateSelected('CW')}
               className="flex items-center gap-1 px-2 py-1 rounded text-xs font-mono text-zinc-300 hover:text-amber-300 hover:bg-zinc-800 transition-all"
-              title="Rotate Clockwise 90° (→ Arrow Key or R)"
+              title="Rotate Clockwise 90° (R)"
             >
               <RotateCw className="w-3.5 h-3.5 text-amber-400" />
-              <span>→ (R)</span>
+              <span>↻ (R)</span>
             </button>
           </div>
         )}

@@ -165,6 +165,36 @@ const CATALOG: ComponentCatalogItem[] = [
     icon: <Cpu className="w-4 h-4 text-purple-400" />,
     badge: 'DIP-8 Package',
   },
+  {
+    type: 'CAPACITOR_CERAMIC',
+    title: '0.1µF Ceramic Capacitor (104)',
+    category: 'passives',
+    description: 'High-frequency decoupling disc capacitor for IC power rails.',
+    value: 0.0000001,
+    unit: 'F',
+    icon: <CircleDot className="w-4 h-4 text-amber-400" />,
+    badge: '0.1µF Disc',
+  },
+  {
+    type: 'SWITCH_TOGGLE',
+    title: 'Mini Toggle Switch (SPDT)',
+    category: 'logic',
+    description: 'Bistable on/off circuit latching power switch.',
+    value: 0.01,
+    unit: 'Ω',
+    icon: <ToggleLeft className="w-4 h-4 text-cyan-400" />,
+    badge: 'SPDT Latch',
+  },
+  {
+    type: 'DISPLAY_7SEG',
+    title: '1-Digit 7-Segment LED Display',
+    category: 'output',
+    description: 'Common cathode 10-pin DIP numerical digit display across center trough.',
+    value: 1,
+    unit: 'DISP',
+    icon: <Lightbulb className="w-4 h-4 text-rose-400" />,
+    badge: '10-Pin DIP',
+  },
 ];
 
 export default function ComponentDrawer({
