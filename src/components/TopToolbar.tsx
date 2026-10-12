@@ -203,19 +203,19 @@ export default function TopToolbar({
             <button
               onClick={() => onRotateSelected('CCW')}
               className="flex items-center gap-1 px-2 py-1 rounded text-xs font-mono text-zinc-300 hover:text-amber-300 hover:bg-zinc-800 transition-all"
-              title="Rotate Counter-Clockwise 90° (← Arrow Key)"
+              title="Rotate Counter-Clockwise 90° (Shift+R)"
             >
               <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
-              <span>←</span>
+              <span>↺</span>
             </button>
             <div className="w-px h-3 bg-white/[0.1] mx-0.5" />
             <button
               onClick={() => onRotateSelected('CW')}
               className="flex items-center gap-1 px-2 py-1 rounded text-xs font-mono text-zinc-300 hover:text-amber-300 hover:bg-zinc-800 transition-all"
-              title="Rotate Clockwise 90° (→ Arrow Key or R)"
+              title="Rotate Clockwise 90° (R)"
             >
               <RotateCw className="w-3.5 h-3.5 text-amber-400" />
-              <span>→ (R)</span>
+              <span>↻ (R)</span>
             </button>
           </div>
         )}

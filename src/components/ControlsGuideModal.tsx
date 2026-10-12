@@ -56,13 +56,13 @@ const CONTROL_CATEGORIES: ControlCategory[] = [
       },
       {
         task: 'Nudge Rows (Up / Down)',
-        keys: ['W', 'S', '↑', '↓'],
-        description: 'Step-move the selected component forward or backward across breadboard rows.',
+        keys: ['↑', '↓', 'W', 'S'],
+        description: 'Step-move the selected component up or down across breadboard rows (hold Shift to move 5 steps).',
       },
       {
         task: 'Nudge Columns (Left / Right)',
-        keys: ['A', 'D', 'Shift+←', 'Shift+→'],
-        description: 'Step-move the selected component left or right across breadboard columns (1–63).',
+        keys: ['←', '→', 'A', 'D'],
+        description: 'Step-move the selected component left or right across breadboard columns 1–63 (hold Shift to move 5 steps).',
       },
       {
         task: 'Deselect',
@@ -79,18 +79,18 @@ const CONTROL_CATEGORIES: ControlCategory[] = [
     items: [
       {
         task: 'Rotate Clockwise (90°)',
-        keys: ['→', 'R'],
+        keys: ['R'],
         description: 'Rotates selected component or placement hologram 90° clockwise.',
         tip: 'For breadboard parts, automatically flips footprint pins between horizontal and vertical.',
       },
       {
         task: 'Rotate Counter-Clockwise (90°)',
-        keys: ['←'],
+        keys: ['Shift + R'],
         description: 'Rotates selected component 90° counter-clockwise.',
       },
       {
         task: 'Rotate 9V Battery',
-        keys: ['←', '→', 'R'],
+        keys: ['R', 'Shift + R'],
         description: 'Rotates battery on the ESD bench mat. Connected jumper wires follow the snap terminals automatically.',
       },
     ],
@@ -397,13 +397,13 @@ export default function ControlsGuideModal({ isOpen, onClose }: ControlsGuideMod
         <div className="px-6 py-3.5 border-t border-white/[0.08] bg-zinc-950/90 flex items-center justify-between text-xs font-mono text-zinc-400">
           <div className="flex items-center gap-4">
             <span>
-              💡 <span className="text-zinc-300">Quick Rotation Tip:</span> Use{' '}
-              <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">←</kbd> and{' '}
-              <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">→</kbd> Arrow Keys
+              💡 <span className="text-zinc-300">Quick Move Tip:</span> Use{' '}
+              <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">Arrow Keys</kbd> or{' '}
+              <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">WASD</kbd> (Hold Shift for 5x step)
             </span>
             <span>
-              💡 <span className="text-zinc-300">Quick Move Tip:</span> Drag with mouse or use{' '}
-              <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">WASD</kbd>
+              💡 <span className="text-zinc-300">Quick Rotation Tip:</span> Press{' '}
+              <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-amber-300 border border-white/[0.1]">R</kbd> (or Shift+R)
             </span>
           </div>
 

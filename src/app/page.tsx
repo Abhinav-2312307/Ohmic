@@ -96,7 +96,7 @@ export default function OhmicWorkbenchPage() {
     return () => clearInterval(interval);
   }, [components, wires, multimeter, ambientTemperature, isSimulating]);
 
-  // Rotation Handler (supports CW and CCW with arrow keys and 'R')
+  // Rotation Handler (supports CW and CCW with 'R' and Shift+'R')
   const handleRotateSelected = useCallback(
     (dir: 'CW' | 'CCW' = 'CW') => {
       if (!selectedComponentId) return;
@@ -106,11 +106,16 @@ export default function OhmicWorkbenchPage() {
         if (!comp) return prev;
         const rotated = rotateComponent(comp, dir);
         const updated = prev.map((c) => (c.id === selectedComponentId ? rotated : c));
-        setWires((prevWires) => updateWiresForComponent(rotated, updated, prevWires));
+        setWires((prevWires) => {
+          const updatedWires = updateWiresForComponent(rotated, updated, prevWires);
+          const result = solveCircuit(updated, updatedWires, multimeter, ambientTemperature);
+          setMultimeter(result.multimeter);
+          return result.wires;
+        });
         return updated;
       });
     },
-    [selectedComponentId]
+    [selectedComponentId, multimeter, ambientTemperature]
   );
 
   // Movement Handler (step-by-step nudge on breadboard or workbench mat)
@@ -124,21 +129,34 @@ export default function OhmicWorkbenchPage() {
         if (!nudged) return prev;
         audioEngine.playSnapSound();
         const updated = prev.map((c) => (c.id === selectedComponentId ? nudged : c));
-        setWires((prevWires) => updateWiresForComponent(nudged, updated, prevWires));
+        setWires((prevWires) => {
+          const updatedWires = updateWiresForComponent(nudged, updated, prevWires);
+          const result = solveCircuit(updated, updatedWires, multimeter, ambientTemperature);
+          setMultimeter(result.multimeter);
+          return result.wires;
+        });
         return updated;
       });
     },
-    [selectedComponentId]
+    [selectedComponentId, multimeter, ambientTemperature]
   );
 
   // Direct move handler for 3D mouse drag
-  const handleMoveComponentDirect = useCallback((id: string, updatedComp: CircuitComponent) => {
-    setComponents((prev) => {
-      const updated = prev.map((c) => (c.id === id ? updatedComp : c));
-      setWires((prevWires) => updateWiresForComponent(updatedComp, updated, prevWires));
-      return updated;
-    });
-  }, []);
+  const handleMoveComponentDirect = useCallback(
+    (id: string, updatedComp: CircuitComponent) => {
+      setComponents((prev) => {
+        const updated = prev.map((c) => (c.id === id ? updatedComp : c));
+        setWires((prevWires) => {
+          const updatedWires = updateWiresForComponent(updatedComp, updated, prevWires);
+          const result = solveCircuit(updated, updatedWires, multimeter, ambientTemperature);
+          setMultimeter(result.multimeter);
+          return result.wires;
+        });
+        return updated;
+      });
+    },
+    [multimeter, ambientTemperature]
+  );
 
   // Unified Immediate Circuit Solver & State Synchronizer
   const applyCircuitUpdate = useCallback(
@@ -189,30 +207,26 @@ export default function OhmicWorkbenchPage() {
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
         if (selectedComponentId) {
-          if (e.shiftKey) {
-            handleMoveSelected(-1, 0); // Shift+Left: Move column left
-          } else {
-            handleRotateSelected('CCW'); // Left Arrow: Rotate 90° CCW
-          }
+          const step = e.shiftKey ? 5 : 1;
+          handleMoveSelected(-step, 0); // Left Arrow: Move column left
         }
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
         if (selectedComponentId) {
-          if (e.shiftKey) {
-            handleMoveSelected(1, 0); // Shift+Right: Move column right
-          } else {
-            handleRotateSelected('CW'); // Right Arrow: Rotate 90° CW
-          }
+          const step = e.shiftKey ? 5 : 1;
+          handleMoveSelected(step, 0); // Right Arrow: Move column right
         }
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         if (selectedComponentId) {
-          handleMoveSelected(0, 1); // Up Arrow: Move row up
+          const step = e.shiftKey ? 5 : 1;
+          handleMoveSelected(0, -step); // Up Arrow: Move row up (towards Row A)
         }
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
         if (selectedComponentId) {
-          handleMoveSelected(0, -1); // Down Arrow: Move row down
+          const step = e.shiftKey ? 5 : 1;
+          handleMoveSelected(0, step); // Down Arrow: Move row down (towards Row J)
         }
       } else if (e.key === 'a' || e.key === 'A') {
         if (selectedComponentId) {
@@ -224,14 +238,14 @@ export default function OhmicWorkbenchPage() {
         }
       } else if (e.key === 'w' || e.key === 'W') {
         if (selectedComponentId) {
-          handleMoveSelected(0, 1);
+          handleMoveSelected(0, -1);
         } else {
           setActiveTool('WIRE');
           setPlacingComponent(null);
         }
       } else if (e.key === 's' || e.key === 'S') {
         if (selectedComponentId) {
-          handleMoveSelected(0, -1);
+          handleMoveSelected(0, 1);
         }
       } else if (e.key === 'v' || e.key === 'V') {
         setActiveTool('SELECT');
@@ -255,7 +269,7 @@ export default function OhmicWorkbenchPage() {
         }
       } else if (e.key === 'r' || e.key === 'R') {
         if (selectedComponentId) {
-          handleRotateSelected('CW');
+          handleRotateSelected(e.shiftKey ? 'CCW' : 'CW');
         }
       } else if (e.key === 'Escape') {
         setActiveTool('SELECT');

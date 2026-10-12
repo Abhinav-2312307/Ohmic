@@ -103,7 +103,7 @@ export default function PropertyInspector({
                   onRotateComponent(c.id, 'CCW');
                 }}
                 className="p-1 text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 rounded transition-all"
-                title="Rotate Counter-Clockwise 90° (← Arrow Key)"
+                title="Rotate Counter-Clockwise 90° (Shift+R)"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
@@ -114,7 +114,7 @@ export default function PropertyInspector({
                   onRotateComponent(c.id, 'CW');
                 }}
                 className="p-1 text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 rounded transition-all"
-                title="Rotate Clockwise 90° (→ Arrow Key or R)"
+                title="Rotate Clockwise 90° (R)"
               >
                 <RotateCw className="w-3.5 h-3.5" />
               </button>

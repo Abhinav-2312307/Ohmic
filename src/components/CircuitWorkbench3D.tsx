@@ -314,10 +314,30 @@ export default function CircuitWorkbench3D({
   const isPanningRef = useRef(false);
   const isDraggingComponentRef = useRef(false);
   const draggedCompIdRef = useRef<string | null>(null);
+  const dragPlaneOffsetRef = useRef({ x: 0, z: 0 });
+  const dragPin0OffsetRef = useRef({ x: 0, z: 0 });
+  const dragCandidateCompRef = useRef<CircuitComponent | null>(null);
+  const statusMessageRef = useRef<string>('');
+  const hoveredHoleIdRef = useRef<string | null>(null);
   const mouseDownPosRef = useRef({ x: 0, y: 0 });
   const prevMouseRef = useRef({ x: 0, y: 0 });
   const cameraTargetRef = useRef<THREE.Vector3 | null>(new THREE.Vector3(-0.040, 0.012, 0.005));
   const cameraSphericalRef = useRef({ radius: 0.30, theta: Math.PI / 4.1, phi: Math.PI / 3.2 });
+
+  // Deduplicated HUD message and hovered hole helpers to prevent unneeded re-renders
+  const updateStatus = useCallback((msg: string) => {
+    if (statusMessageRef.current !== msg) {
+      statusMessageRef.current = msg;
+      setStatusMessage(msg);
+    }
+  }, []);
+
+  const updateHoveredHole = useCallback((id: string | null) => {
+    if (hoveredHoleIdRef.current !== id) {
+      hoveredHoleIdRef.current = id;
+      setHoveredHoleId(id);
+    }
+  }, []);
 
   // Update Camera Orbit
   const updateCameraPosition = useCallback(() => {
@@ -1277,7 +1297,7 @@ export default function CircuitWorkbench3D({
     if (e.button !== 0) return;
 
     // Check if clicking directly on a component in SELECT mode to drag it
-    if (activeTool === 'SELECT' && !wiringStartHole && !placingComponent) {
+    if (activeTool === 'SELECT' && !wiringStartHole && !placingComponent && !activeProbe) {
       if (containerRef.current && cameraRef.current && sceneRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
         const mouse = new THREE.Vector2(
@@ -1301,9 +1321,20 @@ export default function CircuitWorkbench3D({
             if (hitComp) {
               isDraggingComponentRef.current = true;
               draggedCompIdRef.current = hitComp.id;
+              dragCandidateCompRef.current = null;
               onSelectComponent(hitComp);
               onSelectWire(null);
               audioEngine.playKnobClick();
+
+              if (hitComp.type === 'BATTERY_9V') {
+                const matPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+                const matIntersect = new THREE.Vector3();
+                raycaster.ray.intersectPlane(matPlane, matIntersect);
+                dragPlaneOffsetRef.current = {
+                  x: hitComp.position[0] - matIntersect.x,
+                  z: hitComp.position[1] - matIntersect.z,
+                };
+              }
               return;
             }
           }
@@ -1360,28 +1391,49 @@ export default function CircuitWorkbench3D({
           const matIntersect = new THREE.Vector3();
           raycaster.ray.intersectPlane(matPlane, matIntersect);
 
-          record.group.position.set(matIntersect.x, 0, matIntersect.z);
-          setStatusMessage('Dragging 9V Battery • Release to place on workbench mat • Arrow keys (← / →) to rotate');
+          const targetX = Math.max(-0.25, Math.min(0.25, matIntersect.x + dragPlaneOffsetRef.current.x));
+          const targetZ = Math.max(-0.16, Math.min(0.16, matIntersect.z + dragPlaneOffsetRef.current.z));
+
+          record.group.position.set(targetX, 0, targetZ);
+          dragCandidateCompRef.current = {
+            ...draggedComp,
+            position: [targetX, targetZ, 0],
+          };
+          updateStatus('Dragging 9V Battery • Release to place on workbench mat');
         } else {
           const bbPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.0085);
           const bbIntersect = new THREE.Vector3();
           raycaster.ray.intersectPlane(bbPlane, bbIntersect);
 
-          const nearest = findNearestHole(bbIntersect.x, bbIntersect.z, 0.015);
-          if (nearest) {
-            const rotDeg = Math.round(((draggedComp.rotation ? draggedComp.rotation[1] : 0) * 180) / Math.PI) % 360;
-            const fp = getComponentFootprint(draggedComp.type, nearest.id, rotDeg);
-            if (fp.isValid && fp.holeIds.length > 0) {
-              const p1 = getHolePosition(fp.holeIds[0]);
-              const p2 = getHolePosition(fp.holeIds[fp.holeIds.length - 1]);
-              if (p1 && p2) {
-                const compY = getComponentDefaultElevation(draggedComp.type);
-                record.group.position.set((p1[0] + p2[0]) / 2, compY, (p1[1] + p2[1]) / 2);
-              }
-              setStatusMessage(`Moving ${draggedComp.name} ➔ Holes [${fp.holeIds.join(', ')}] • Release to snap`);
-            }
+          // Find the nearest hole directly under cursor (generous 18mm threshold across breadboard)
+          const nearestHole = findNearestHole(bbIntersect.x, bbIntersect.z, 0.018);
+          let snappedComp: CircuitComponent | null = null;
+          if (nearestHole) {
+            snappedComp = moveComponentToHole(draggedComp, nearestHole.id);
+          }
+
+          if (snappedComp) {
+            record.group.position.set(
+              snappedComp.position[0],
+              snappedComp.position[2],
+              snappedComp.position[1]
+            );
+            const snappedHoles = snappedComp.pins
+              .map((p) => p.connectedHoleId)
+              .filter((id): id is string => Boolean(id));
+            setHoveredTargetHoles(snappedHoles);
+            updateStatus(`Moving ${draggedComp.name} ➔ Holes [${snappedHoles.join(', ')}] • Release to place`);
+            dragCandidateCompRef.current = snappedComp;
+          } else {
+            // Free floating smoothly with cursor (slight 4mm lift) when outside breadboard
+            const compY = getComponentDefaultElevation(draggedComp.type);
+            record.group.position.set(bbIntersect.x, compY + 0.004, bbIntersect.z);
+            setHoveredTargetHoles([]);
+            updateStatus(`Moving ${draggedComp.name} • Drag over breadboard to place`);
+            dragCandidateCompRef.current = null;
           }
         }
+        if (snapRingMeshRef.current) snapRingMeshRef.current.visible = false;
         return;
       }
     }
@@ -1410,7 +1462,7 @@ export default function CircuitWorkbench3D({
     // Find nearest hole to cursor (tight 4mm threshold so it snaps only to real socket openings)
     const nearestHole = hoveredTerminalId ? null : findNearestHole(planeIntersect.x, planeIntersect.z, 0.004);
     const activeTargetId = hoveredTerminalId || (nearestHole ? nearestHole.id : null);
-    setHoveredHoleId(activeTargetId);
+    updateHoveredHole(activeTargetId);
 
     // Snap Ring Positioning
     if (snapRingMeshRef.current) {
@@ -1464,7 +1516,7 @@ export default function CircuitWorkbench3D({
         sceneRef.current.add(previewMesh);
         previewWireMeshRef.current = previewMesh;
 
-        setStatusMessage(
+        updateStatus(
           activeTargetId
             ? `Connect Wire: ${wiringStartHole} ➔ ${activeTargetId} (Click to attach)`
             : `Stretching Wire from ${wiringStartHole}... Hover over target hole or battery terminal`
@@ -1487,7 +1539,7 @@ export default function CircuitWorkbench3D({
         ghost.position.set(matIntersect.x, 0, matIntersect.z);
         ghost.rotation.set(0, (placementRotationDeg * Math.PI) / 180, 0);
 
-        setStatusMessage(
+        updateStatus(
           `Place 9V Battery on Bench Mat outside breadboard • Press 'R' to Rotate • Click to Place`
         );
         return;
@@ -1513,13 +1565,13 @@ export default function CircuitWorkbench3D({
           ghost.rotation.set(0, (placementRotationDeg * Math.PI) / 180, 0);
         }
 
-        setStatusMessage(
+        updateStatus(
           `Place ${placingComponent.type} on [${fp.holeIds.join(', ')}] • Press 'R' to Rotate • Click to Attach`
         );
       } else {
         const compY = getComponentDefaultElevation(placingComponent.type);
         ghost.position.set(planeIntersect.x, compY, planeIntersect.z);
-        setStatusMessage(`Hover over breadboard holes to place ${placingComponent.type}`);
+        updateStatus(`Hover over breadboard holes to place ${placingComponent.type}`);
       }
       return;
     }
@@ -1527,83 +1579,89 @@ export default function CircuitWorkbench3D({
     // Default HUD Message
     if (activeTool === 'WIRE') {
       if (hoveredTerminalId) {
-        setStatusMessage(`${hoveredTerminalName} • Click to start jumper wire`);
+        updateStatus(`${hoveredTerminalName} • Click to start jumper wire`);
       } else if (nearestHole) {
-        setStatusMessage(`${getHoleDescription(nearestHole.id)} • Click to start jumper wire`);
+        updateStatus(`${getHoleDescription(nearestHole.id)} • Click to start jumper wire`);
       } else {
-        setStatusMessage('Wire Tool: Click any hole or battery terminal to stretch wire');
+        updateStatus('Wire Tool: Click any hole or battery terminal to stretch wire');
       }
     } else if (activeProbe) {
       if (hoveredTerminalId) {
-        setStatusMessage(`Click to attach Multimeter ${activeProbe} Probe to ${hoveredTerminalName}`);
+        updateStatus(`Click to attach Multimeter ${activeProbe} Probe to ${hoveredTerminalName}`);
       } else if (nearestHole) {
-        setStatusMessage(`Click to attach Multimeter ${activeProbe} Probe to ${nearestHole.id}`);
+        updateStatus(`Click to attach Multimeter ${activeProbe} Probe to ${nearestHole.id}`);
       } else {
-        setStatusMessage(`Click pin or terminal to attach Multimeter ${activeProbe} Probe`);
+        updateStatus(`Click pin or terminal to attach Multimeter ${activeProbe} Probe`);
       }
     } else {
       if (hoveredTerminalId) {
-        setStatusMessage(hoveredTerminalName);
+        updateStatus(hoveredTerminalName);
       } else if (nearestHole) {
-        setStatusMessage(getHoleDescription(nearestHole.id));
+        updateStatus(getHoleDescription(nearestHole.id));
       } else {
-        setStatusMessage('');
+        updateStatus('');
       }
     }
   };
 
-  const handleMouseUp = (e: React.MouseEvent) => {
-    isDraggingRef.current = false;
-    isPanningRef.current = false;
+  const handleMouseUp = useCallback(
+    (e: React.MouseEvent | MouseEvent) => {
+      isDraggingRef.current = false;
+      isPanningRef.current = false;
 
-    if (isDraggingComponentRef.current && draggedCompIdRef.current) {
-      const dragDist = Math.hypot(
-        e.clientX - mouseDownPosRef.current.x,
-        e.clientY - mouseDownPosRef.current.y
-      );
+      if (isDraggingComponentRef.current && draggedCompIdRef.current) {
+        const dragDist = Math.hypot(
+          e.clientX - mouseDownPosRef.current.x,
+          e.clientY - mouseDownPosRef.current.y
+        );
 
-      if (dragDist >= 6 && onMoveComponent) {
         const draggedComp = components.find((c) => c.id === draggedCompIdRef.current);
-        if (draggedComp && containerRef.current && cameraRef.current) {
-          const rect = containerRef.current.getBoundingClientRect();
-          const mouse = new THREE.Vector2(
-            ((e.clientX - rect.left) / rect.width) * 2 - 1,
-            -((e.clientY - rect.top) / rect.height) * 2 + 1
-          );
-          const raycaster = new THREE.Raycaster();
-          raycaster.setFromCamera(mouse, cameraRef.current);
+        const record = componentRecordsRef.current.get(draggedCompIdRef.current);
 
-          if (draggedComp.type === 'BATTERY_9V') {
-            const matPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-            const matIntersect = new THREE.Vector3();
-            raycaster.ray.intersectPlane(matPlane, matIntersect);
-
-            const updatedComp: CircuitComponent = {
-              ...draggedComp,
-              position: [matIntersect.x, matIntersect.z, 0],
-            };
+        if (dragDist >= 4 && onMoveComponent && draggedComp) {
+          if (dragCandidateCompRef.current) {
             audioEngine.playSnapSound();
-            onMoveComponent(draggedComp.id, updatedComp);
+            onMoveComponent(draggedComp.id, dragCandidateCompRef.current);
+            updateStatus(`Placed ${draggedComp.name}`);
           } else {
-            const bbPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.0085);
-            const bbIntersect = new THREE.Vector3();
-            raycaster.ray.intersectPlane(bbPlane, bbIntersect);
-
-            const nearest = findNearestHole(bbIntersect.x, bbIntersect.z, 0.015);
-            if (nearest) {
-              const updatedComp = moveComponentToHole(draggedComp, nearest.id);
-              if (updatedComp) {
-                audioEngine.playSnapSound();
-                onMoveComponent(draggedComp.id, updatedComp);
-              }
+            // Revert mesh back to exact original position if released in invalid spot
+            if (record) {
+              record.group.position.set(
+                draggedComp.position[0],
+                draggedComp.position[2],
+                draggedComp.position[1]
+              );
             }
+            audioEngine.playPopSound();
+            updateStatus(`${draggedComp.name} returned to original position`);
           }
+        } else if (record && draggedComp) {
+          // Just a click without dragging - restore exact original position
+          record.group.position.set(
+            draggedComp.position[0],
+            draggedComp.position[2],
+            draggedComp.position[1]
+          );
         }
+
+        setHoveredTargetHoles([]);
+        isDraggingComponentRef.current = false;
+        draggedCompIdRef.current = null;
+        dragCandidateCompRef.current = null;
       }
-      isDraggingComponentRef.current = false;
-      draggedCompIdRef.current = null;
-    }
-  };
+    },
+    [components, onMoveComponent, updateStatus]
+  );
+
+  useEffect(() => {
+    const handleGlobalMouseUp = (e: MouseEvent) => {
+      if (isDraggingComponentRef.current || isDraggingRef.current || isPanningRef.current) {
+        handleMouseUp(e);
+      }
+    };
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, [handleMouseUp]);
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
