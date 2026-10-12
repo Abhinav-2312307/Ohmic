@@ -149,6 +149,16 @@ export function getTerminalOrHolePosition(
         const termY = comp.position[1] + offsetZ;
         const termZ = 0.048; // Top terminal height in meters
         return [termX, termY, termZ];
+      } else if (comp.type === 'SPEAKER') {
+        const isPos = terminal === 'pos' || terminal === '+' || terminal === 'sp1';
+        const sign = isPos ? -1 : 1; // Left (+) / Right (-)
+        const rotY = comp.rotation ? comp.rotation[1] : 0;
+        const offsetX = sign * 0.009 * Math.cos(rotY);
+        const offsetZ = sign * 0.009 * Math.sin(rotY);
+        const termX = comp.position[0] + offsetX;
+        const termY = comp.position[1] + offsetZ;
+        const termZ = 0.014; // Top speaker terminal post height
+        return [termX, termY, termZ];
       }
     }
   }
@@ -225,6 +235,7 @@ export function getComponentDefaultElevation(type: string): number {
   switch (type) {
     case 'BATTERY_9V':
     case 'DC_SOURCE':
+    case 'SPEAKER':
       return 0.0; // Rests on ESD bench mat
     case 'IC_555':
     case 'DIP8_555':
@@ -240,7 +251,6 @@ export function getComponentDefaultElevation(type: string): number {
     case 'CAPACITOR_ELECTROLYTIC':
     case 'CAPACITOR_CERAMIC':
     case 'POTENTIOMETER':
-    case 'SPEAKER':
     case 'INDUCTOR_TOROID':
     default:
       return 0.0068;
@@ -348,7 +358,6 @@ export function getComponentFootprint(
     }
 
     case 'BULB_INCANDESCENT':
-    case 'SPEAKER':
     case 'INDUCTOR_TOROID': {
       // 2 or 3 holes span
       const targetCol = currentCol + 2 <= 63 ? currentCol + 2 : currentCol - 2;

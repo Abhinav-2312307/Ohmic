@@ -244,6 +244,55 @@ export default function PropertyInspector({
         </div>
       )}
 
+      {/* Incandescent Bulb Live Glow Indicator */}
+      {c.type === 'BULB_INCANDESCENT' && (
+        <div className="my-3 p-3 bg-zinc-950/60 rounded-xl border border-white/[0.06] flex flex-col gap-2">
+          <div className="flex items-center justify-between text-xs font-mono">
+            <span className="text-zinc-400">FILAMENT STATE:</span>
+            <span
+              className={`font-bold flex items-center gap-1.5 ${
+                (c as any).isEmitting
+                  ? 'text-amber-400'
+                  : isBurned
+                  ? 'text-rose-500'
+                  : 'text-zinc-500'
+              }`}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  (c as any).isEmitting
+                    ? 'bg-amber-400 shadow-md shadow-amber-400/80 animate-pulse'
+                    : isBurned
+                    ? 'bg-rose-500'
+                    : 'bg-zinc-600'
+                }`}
+              />
+              {(c as any).isEmitting
+                ? 'RADIATING'
+                : isBurned
+                ? 'BURNED OUT'
+                : 'COLD (0% GLOW)'}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between text-[11px] font-mono text-zinc-400">
+            <span>RELATIVE BRIGHTNESS:</span>
+            <span className="text-zinc-100 font-bold">
+              {Math.min(100, Math.round(((c as any).emissionIntensity ?? 0) * 50))}%
+            </span>
+          </div>
+
+          <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-amber-600 via-amber-400 to-yellow-200 transition-all duration-300"
+              style={{
+                width: `${Math.min(100, Math.round(((c as any).emissionIntensity ?? 0) * 50))}%`,
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Live Operating Telemetry */}
       <div className="mt-2 border-t border-white/[0.06] pt-3 flex flex-col gap-2.5">
         <span className="text-[10px] font-mono font-bold uppercase text-zinc-400 tracking-wider">
