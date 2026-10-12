@@ -181,8 +181,8 @@ function getComponentBlueprint(
         unit: 'Ω',
         defaultValue: v.value || 8,
         pinTemplate: (holeIds) => [
-          { id: 'sp1', name: '+', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
-          { id: 'sp2', name: '-', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[1] },
+          { id: 'pos', name: '+', relativePos: [-0.009, 0, 0.014], connectedHoleId: holeIds[0] || 'pos' },
+          { id: 'neg', name: '-', relativePos: [0.009, 0, 0.014], connectedHoleId: holeIds[1] || 'neg' },
         ],
         extraDefaults: { maxPowerRating: maxP },
       };
@@ -342,13 +342,13 @@ function resolveWireEndpoint(endpoint: string, componentMap: Map<string, Circuit
   if (endpoint.includes('.')) {
     const [compId, pinName] = endpoint.split('.');
     const comp = componentMap.get(compId);
-    if (comp && (comp.type === 'BATTERY_9V' || comp.type === 'DC_SOURCE')) {
+    if (comp && (comp.type === 'BATTERY_9V' || comp.type === 'DC_SOURCE' || comp.type === 'SPEAKER')) {
       // Map common pin aliases
       const normalizedPin = pinName.toLowerCase();
-      if (normalizedPin === 'pos' || normalizedPin === '+' || normalizedPin === 'positive') {
+      if (normalizedPin === 'pos' || normalizedPin === '+' || normalizedPin === 'positive' || normalizedPin === 'sp1' || normalizedPin === '1') {
         return `${comp.id}:pos`;
       }
-      if (normalizedPin === 'neg' || normalizedPin === '-' || normalizedPin === 'negative') {
+      if (normalizedPin === 'neg' || normalizedPin === '-' || normalizedPin === 'negative' || normalizedPin === 'gnd' || normalizedPin === 'sp2' || normalizedPin === '2') {
         return `${comp.id}:neg`;
       }
     }
@@ -427,16 +427,25 @@ export function compile(ast: OhmScriptAST): CompiledCircuit {
       const parsed = parsePlacementLocation(placement.location);
 
       if (parsed.mode === 'bench') {
-        // Battery on bench mat
-        const bx = battX + batteryCount * 0.03;
-        position = [bx, battZ, 0.0];
-        batteryCount++;
+        if (blueprint.type === 'SPEAKER') {
+          // Speaker on bench mat outside breadboard (right side)
+          position = [0.065, 0.052, 0.0];
+          pinConnections = [
+            { id: 'pos', name: '+', relativePos: [-0.009, 0, 0.014], connectedHoleId: `${compNode.id}:pos` },
+            { id: 'neg', name: '-', relativePos: [0.009, 0, 0.014], connectedHoleId: `${compNode.id}:neg` },
+          ];
+        } else {
+          // Battery / DC power supply on bench mat (left side)
+          const bx = battX + batteryCount * 0.03;
+          position = [bx, battZ, 0.0];
+          batteryCount++;
 
-        // Battery pins get virtual terminal IDs (not breadboard holes)
-        pinConnections = blueprint.pinTemplate([]).map(p => ({
-          ...p,
-          connectedHoleId: p.id === 'pos' ? `${compNode.id}:pos` : `${compNode.id}:neg`,
-        }));
+          // Battery pins get virtual terminal IDs (not breadboard holes)
+          pinConnections = blueprint.pinTemplate([]).map(p => ({
+            ...p,
+            connectedHoleId: p.id === 'pos' ? `${compNode.id}:pos` : `${compNode.id}:neg`,
+          }));
+        }
       } else {
         holeIds = parsed.holeIds;
 

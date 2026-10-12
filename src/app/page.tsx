@@ -370,8 +370,8 @@ export default function OhmicWorkbenchPage() {
         const lastPos = getHolePosition(holeIds[holeIds.length - 1], components);
         x = firstPos && lastPos ? (firstPos[0] + lastPos[0]) / 2 : 0;
         z = firstPos && lastPos ? (firstPos[1] + lastPos[1]) / 2 : 0;
-      } else if (type === 'BATTERY_9V' || type === 'DC_SOURCE') {
-        x = type === 'DC_SOURCE' ? 0.055 : -0.06;
+      } else if (type === 'BATTERY_9V' || type === 'DC_SOURCE' || type === 'SPEAKER') {
+        x = type === 'SPEAKER' ? 0.065 : type === 'DC_SOURCE' ? 0.055 : -0.06;
         z = 0.055;
         y = 0.0;
       }
@@ -444,12 +444,12 @@ export default function OhmicWorkbenchPage() {
           break;
 
         case 'SPEAKER':
-          name = '8Ω Mini Speaker';
+          name = '8Ω Mini Dynamic Speaker';
           modelUrl = '/models/components/speaker_8ohm.glb';
           unit = 'Ω';
           pins = [
-            { id: 'sp1', name: '+', relativePos: [-0.008, 0, 0], connectedHoleId: holeIds[0] },
-            { id: 'sp2', name: '-', relativePos: [0.008, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'pos', name: '+', relativePos: [-0.009, 0, 0.014], connectedHoleId: `${id}:pos` },
+            { id: 'neg', name: '-', relativePos: [0.009, 0, 0.014], connectedHoleId: `${id}:neg` },
           ];
           break;
 

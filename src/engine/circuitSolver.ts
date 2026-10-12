@@ -460,10 +460,10 @@ export function solveCircuit(
       const p1 = updated.pins[0]?.connectedHoleId;
       const p2 = updated.pins[1]?.connectedHoleId;
       if (p1 && p2) {
-        const v1 = holeVoltages.get(p1) ?? 0;
-        const v2 = holeVoltages.get(p2) ?? 0;
+        const v1 = getNodeVoltage(p1);
+        const v2 = getNodeVoltage(p2);
         vDrop = Math.abs(v1 - v2);
-        iCurrent = vDrop / 8;
+        iCurrent = vDrop / Math.max(1, updated.value || 8);
       }
     }
 

@@ -139,11 +139,11 @@ const CATALOG: ComponentCatalogItem[] = [
     type: 'SPEAKER',
     title: '8Ω Mini Dynamic Speaker',
     category: 'output',
-    description: 'Voice coil acoustic transducer generating live sound tones from voltage.',
+    description: 'Bench-top voice coil transducer with dual top wire terminals (+/-). Rests on workbench mat.',
     value: 8,
     unit: 'Ω',
     icon: <Volume2 className="w-4 h-4 text-indigo-400" />,
-    badge: '8Ω Audio',
+    badge: 'Bench 8Ω',
   },
   {
     type: 'SWITCH_TACTILE',

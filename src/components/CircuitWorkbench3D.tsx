@@ -852,7 +852,9 @@ export default function CircuitWorkbench3D({
 
         // Selection highlight ring (sized appropriately for component)
         const isBatt = comp.type === 'BATTERY_9V';
-        const selRingGeo = isBatt
+        const isSpk = comp.type === 'SPEAKER';
+        const isBench = isBatt || isSpk || comp.type === 'DC_SOURCE';
+        const selRingGeo = isBatt || isSpk
           ? new THREE.RingGeometry(0.018, 0.024, 32)
           : new THREE.RingGeometry(0.008, 0.012, 24);
         const selRingMat = new THREE.MeshBasicMaterial({
@@ -861,17 +863,19 @@ export default function CircuitWorkbench3D({
         });
         const selRing = new THREE.Mesh(selRingGeo, selRingMat);
         selRing.rotation.x = -Math.PI / 2;
-        selRing.position.y = isBatt ? 0.001 : Math.max(0.001, 0.0089 - comp.position[2]);
+        selRing.position.y = isBench ? 0.001 : Math.max(0.001, 0.0089 - comp.position[2]);
         selRing.visible = comp.id === selectedComponentId;
         compGroup.add(selRing);
 
         // Invisible Hit-box proxy for reliable selection and dragging
         const hitBoxGeo = isBatt
           ? new THREE.BoxGeometry(0.032, 0.054, 0.022)
+          : isSpk
+          ? new THREE.BoxGeometry(0.036, 0.024, 0.036)
           : new THREE.BoxGeometry(0.024, 0.024, 0.016);
         const hitBoxMat = new THREE.MeshBasicMaterial({ visible: false });
         const hitBox = new THREE.Mesh(hitBoxGeo, hitBoxMat);
-        hitBox.position.y = isBatt ? 0.025 : 0.008;
+        hitBox.position.y = isBatt ? 0.025 : isSpk ? 0.012 : 0.008;
         hitBox.userData = { componentId: comp.id, isHitProxy: true };
         compGroup.add(hitBox);
 
@@ -959,6 +963,57 @@ export default function CircuitWorkbench3D({
           compGroup.add(negRing);
         }
 
+        // Attach interactive snap terminals for 8Ω Mini Speaker (Dual top binding posts)
+        if (comp.type === 'SPEAKER') {
+          // Positive Terminal Stud (+) with red collar ring
+          const posTermGeo = new THREE.CylinderGeometry(0.0028, 0.0028, 0.006, 16);
+          const posTermMat = new THREE.MeshStandardMaterial({
+            color: 0xd4d4d8,
+            metalness: 0.95,
+            roughness: 0.15,
+          });
+          const posTerm = new THREE.Mesh(posTermGeo, posTermMat);
+          posTerm.position.set(-0.009, 0.014, 0);
+          posTerm.userData = {
+            isBatteryTerminal: true,
+            terminalId: `${comp.id}:pos`,
+            componentId: comp.id,
+            name: '8Ω Mini Speaker (+) Positive Terminal',
+          };
+          compGroup.add(posTerm);
+
+          const posRingGeo = new THREE.RingGeometry(0.0028, 0.005, 16);
+          const posRingMat = new THREE.MeshBasicMaterial({ color: 0xef4444, side: THREE.DoubleSide });
+          const posRing = new THREE.Mesh(posRingGeo, posRingMat);
+          posRing.rotation.x = -Math.PI / 2;
+          posRing.position.set(-0.009, 0.0112, 0);
+          compGroup.add(posRing);
+
+          // Negative Terminal Stud (-) with black collar ring
+          const negTermGeo = new THREE.CylinderGeometry(0.0028, 0.0028, 0.006, 16);
+          const negTermMat = new THREE.MeshStandardMaterial({
+            color: 0xa1a1aa,
+            metalness: 0.9,
+            roughness: 0.25,
+          });
+          const negTerm = new THREE.Mesh(negTermGeo, negTermMat);
+          negTerm.position.set(0.009, 0.014, 0);
+          negTerm.userData = {
+            isBatteryTerminal: true,
+            terminalId: `${comp.id}:neg`,
+            componentId: comp.id,
+            name: '8Ω Mini Speaker (-) Negative Terminal',
+          };
+          compGroup.add(negTerm);
+
+          const negRingGeo = new THREE.RingGeometry(0.0028, 0.005, 16);
+          const negRingMat = new THREE.MeshBasicMaterial({ color: 0x18181b, side: THREE.DoubleSide });
+          const negRing = new THREE.Mesh(negRingGeo, negRingMat);
+          negRing.rotation.x = -Math.PI / 2;
+          negRing.position.set(0.009, 0.0112, 0);
+          compGroup.add(negRing);
+        }
+
         if (comp.modelUrl) {
           loadModelPrefab(
             comp.modelUrl,
@@ -1003,7 +1058,7 @@ export default function CircuitWorkbench3D({
 
       // Selection indicator
       record.selRing.visible = comp.id === selectedComponentId;
-      if (comp.type !== 'BATTERY_9V') {
+      if (comp.type !== 'BATTERY_9V' && comp.type !== 'SPEAKER') {
         record.selRing.position.y = Math.max(0.001, 0.0089 - comp.position[2]);
       }
 
@@ -1432,7 +1487,7 @@ export default function CircuitWorkbench3D({
               onSelectWire(null);
               audioEngine.playKnobClick();
 
-              if (hitComp.type === 'BATTERY_9V') {
+              if (hitComp.type === 'BATTERY_9V' || hitComp.type === 'DC_SOURCE' || hitComp.type === 'SPEAKER') {
                 const matPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
                 const matIntersect = new THREE.Vector3();
                 raycaster.ray.intersectPlane(matPlane, matIntersect);
@@ -1492,7 +1547,7 @@ export default function CircuitWorkbench3D({
       const record = componentRecordsRef.current.get(draggedCompIdRef.current);
 
       if (draggedComp && record) {
-        if (draggedComp.type === 'BATTERY_9V') {
+        if (draggedComp.type === 'BATTERY_9V' || draggedComp.type === 'DC_SOURCE' || draggedComp.type === 'SPEAKER') {
           const matPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
           const matIntersect = new THREE.Vector3();
           raycaster.ray.intersectPlane(matPlane, matIntersect);
@@ -1505,7 +1560,7 @@ export default function CircuitWorkbench3D({
             ...draggedComp,
             position: [targetX, targetZ, 0],
           };
-          updateStatus('Dragging 9V Battery • Release to place on workbench mat');
+          updateStatus(`Dragging ${draggedComp.name} • Release to place on workbench mat`);
         } else {
           const bbPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.0085);
           const bbIntersect = new THREE.Vector3();
@@ -1636,8 +1691,8 @@ export default function CircuitWorkbench3D({
       const ghost = ghostGroupRef.current;
       ghost.visible = true;
 
-      if (placingComponent.type === 'BATTERY_9V' || placingComponent.type === 'DC_SOURCE') {
-        // Voltage source rests outside breadboard on ESD bench mat (Y = 0)
+      if (placingComponent.type === 'BATTERY_9V' || placingComponent.type === 'DC_SOURCE' || placingComponent.type === 'SPEAKER') {
+        // External bench component rests outside breadboard on ESD bench mat (Y = 0)
         const benchMatPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
         const matIntersect = new THREE.Vector3();
         raycaster.ray.intersectPlane(benchMatPlane, matIntersect);
@@ -1645,8 +1700,14 @@ export default function CircuitWorkbench3D({
         ghost.position.set(matIntersect.x, 0, matIntersect.z);
         ghost.rotation.set(0, (placementRotationDeg * Math.PI) / 180, 0);
 
+        const compLabel =
+          placingComponent.type === 'SPEAKER'
+            ? '8Ω Mini Speaker'
+            : placingComponent.type === 'DC_SOURCE'
+            ? 'Bench DC Supply'
+            : '9V Battery';
         updateStatus(
-          `Place ${placingComponent.type === 'DC_SOURCE' ? 'Bench DC Supply' : '9V Battery'} on Bench Mat outside breadboard • Press 'R' to Rotate • Click to Place`
+          `Place ${compLabel} on Bench Mat outside breadboard • Press 'R' to Rotate • Click to Place`
         );
         return;
       }
@@ -1804,17 +1865,20 @@ export default function CircuitWorkbench3D({
 
     // 2. Component Placement Mode
     if (placingComponent) {
-      if (placingComponent.type === 'BATTERY_9V' || placingComponent.type === 'DC_SOURCE') {
+      if (placingComponent.type === 'BATTERY_9V' || placingComponent.type === 'DC_SOURCE' || placingComponent.type === 'SPEAKER') {
         const benchMatPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
         const matIntersect = new THREE.Vector3();
         raycaster.ray.intersectPlane(benchMatPlane, matIntersect);
 
         audioEngine.playSnapSound();
+        const defVal =
+          placingComponent.defaultValue ??
+          (placingComponent.type === 'SPEAKER' ? 8 : placingComponent.type === 'DC_SOURCE' ? 5 : 9);
         onPlaceComponent(
           placingComponent.type,
           [],
           placementRotationDeg,
-          placingComponent.defaultValue ?? (placingComponent.type === 'DC_SOURCE' ? 5 : 9),
+          defVal,
           [matIntersect.x, matIntersect.z, 0]
         );
         setHoveredTargetHoles([]);
