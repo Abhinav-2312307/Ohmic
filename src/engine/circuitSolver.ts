@@ -418,6 +418,24 @@ export function solveCircuit(
           updated.emissionIntensity = 0;
         }
       }
+    } else if (updated.type === 'POTENTIOMETER') {
+      const pin1 = updated.pins[0]?.connectedHoleId;
+      const pinW = updated.pins[1]?.connectedHoleId;
+      const pin2 = updated.pins[2]?.connectedHoleId;
+      const ratio = Math.max(0.001, Math.min(0.999, updated.state?.wiperRatio ?? 0.5));
+      const v1 = pin1 ? (holeVoltages.get(pin1) ?? 0) : 0;
+      const vw = pinW ? (holeVoltages.get(pinW) ?? 0) : 0;
+      const v2 = pin2 ? (holeVoltages.get(pin2) ?? 0) : 0;
+
+      const vDrop1W = pin1 && pinW ? Math.abs(v1 - vw) : 0;
+      const vDropW2 = pinW && pin2 ? Math.abs(vw - v2) : 0;
+      const r1W = Math.max(0.1, updated.value * ratio);
+      const rW2 = Math.max(0.1, updated.value * (1 - ratio));
+      const i1W = pin1 && pinW ? vDrop1W / r1W : 0;
+      const iW2 = pinW && pin2 ? vDropW2 / rW2 : 0;
+
+      vDrop = Math.max(vDrop1W, vDropW2, Math.abs(v1 - v2));
+      iCurrent = Math.max(i1W, iW2);
     } else if (updated.type === 'BULB_INCANDESCENT') {
       const p1 = updated.pins[0]?.connectedHoleId;
       const p2 = updated.pins[1]?.connectedHoleId;
@@ -446,27 +464,88 @@ export function solveCircuit(
     updated.powerDissipated = power;
     totalPower += power;
 
-    // Thermal calculation: deltaT = Power * Thermal_Resistance
-    const thetaJA = 120; // °C / W
+    // Component-specific thermal and power limits
+    let thetaJA = 120; // °C / W
+    let defaultMaxP = 0.25;
+    let maxCurrent = 2.0;
+
+    switch (updated.type) {
+      case 'LED':
+        defaultMaxP = 0.15;
+        maxCurrent = 0.045;
+        thetaJA = 120;
+        break;
+      case 'BULB_INCANDESCENT':
+        defaultMaxP = 5.0;
+        maxCurrent = 1.5;
+        thetaJA = 20;
+        break;
+      case 'SPEAKER':
+        defaultMaxP = 15.0;
+        maxCurrent = 2.5;
+        thetaJA = 6;
+        break;
+      case 'POTENTIOMETER':
+        defaultMaxP = 1.0;
+        maxCurrent = 1.0;
+        thetaJA = 40;
+        break;
+      case 'RESISTOR':
+      default:
+        defaultMaxP = 0.25;
+        maxCurrent = 2.0;
+        thetaJA = 120;
+        break;
+    }
+
+    const maxP = updated.maxPowerRating ?? defaultMaxP;
     const targetTemp = ambientTemperature + power * thetaJA;
     const currentTemp = comp.temperature ?? ambientTemperature;
-    // Progressive thermal rise for observable overheating transition
-    const tempStep = Math.max(12, (targetTemp - currentTemp) * 0.25);
-    updated.temperature = Math.min(targetTemp, currentTemp + tempStep);
 
-    // Check Overheating and Burnout
-    const maxP = updated.maxPowerRating ?? (updated.type === 'LED' ? 0.15 : 0.25);
-    const maxCurrent = updated.type === 'LED' ? 0.045 : 2.0;
-    if (updated.temperature > 150 || (power > maxP * 2.5 && updated.temperature > 110) || iCurrent > maxCurrent * 2.0) {
-      updated.health = 'BURNED_OUT';
-      updated.isEmitting = false;
-      updated.emissionIntensity = 0;
-    } else if (power > maxP * 1.2 || updated.temperature > 85 || iCurrent > maxCurrent) {
-      updated.health = 'OVERHEATING';
-    } else if (power > maxP * 0.7 || updated.temperature > 45) {
-      updated.health = 'WARM';
+    // Smooth progressive thermal rise (~1.5-2s for severe thermal runaway demo)
+    if (targetTemp > currentTemp) {
+      const overloadRatio = power / Math.max(0.1, maxP);
+      const riseRate = Math.min(6, Math.max(0.4, overloadRatio * 0.2));
+      updated.temperature = Math.min(targetTemp, currentTemp + riseRate);
     } else {
-      updated.health = 'NORMAL';
+      updated.temperature = Math.max(targetTemp, currentTemp - Math.max(0.5, (currentTemp - targetTemp) * 0.1));
+    }
+
+    // Check Overheating and Burnout according to component class
+    if (updated.type === 'BULB_INCANDESCENT') {
+      if (power > maxP * 2.5 || vDrop > 16 || iCurrent > maxCurrent * 2.0) {
+        updated.health = 'BURNED_OUT';
+        updated.isEmitting = false;
+        updated.emissionIntensity = 0;
+      } else if (power > maxP * 1.5 || updated.temperature > 140) {
+        updated.health = 'OVERHEATING';
+      } else if (power > maxP * 0.8 || updated.temperature > 60) {
+        updated.health = 'WARM';
+      } else {
+        updated.health = 'NORMAL';
+      }
+    } else if (updated.type === 'SPEAKER') {
+      if (updated.temperature > 160 || (power > maxP * 2.0 && updated.temperature > 130) || iCurrent > maxCurrent * 2.0) {
+        updated.health = 'BURNED_OUT';
+      } else if (power > maxP * 1.2 || updated.temperature > 85) {
+        updated.health = 'OVERHEATING';
+      } else if (power > maxP * 0.7 || updated.temperature > 45) {
+        updated.health = 'WARM';
+      } else {
+        updated.health = 'NORMAL';
+      }
+    } else {
+      if (updated.temperature > 150 || (power > maxP * 2.5 && updated.temperature > 110) || iCurrent > maxCurrent * 2.0) {
+        updated.health = 'BURNED_OUT';
+        updated.isEmitting = false;
+        updated.emissionIntensity = 0;
+      } else if (power > maxP * 1.2 || updated.temperature > 85 || iCurrent > maxCurrent) {
+        updated.health = 'OVERHEATING';
+      } else if (power > maxP * 0.7 || updated.temperature > 45) {
+        updated.health = 'WARM';
+      } else {
+        updated.health = 'NORMAL';
+      }
     }
 
     return updated;

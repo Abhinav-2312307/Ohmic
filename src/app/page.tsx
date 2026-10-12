@@ -80,19 +80,30 @@ export default function OhmicWorkbenchPage() {
     multimeterRef.current = multimeter;
   }, [multimeter]);
 
+  const componentsRef = useRef(components);
+  const wiresRef = useRef(wires);
+  useEffect(() => {
+    componentsRef.current = components;
+  }, [components]);
+  useEffect(() => {
+    wiresRef.current = wires;
+  }, [wires]);
+
   // Simulation Solve Loop (20Hz real-time MNA solver)
   useEffect(() => {
     if (!isSimulating) return;
 
     const interval = setInterval(() => {
-      const result = solveCircuit(components, wires, multimeter, ambientTemperature);
+      const result = solveCircuit(componentsRef.current, wiresRef.current, multimeterRef.current, ambientTemperature);
+      componentsRef.current = result.components;
+      wiresRef.current = result.wires;
       setComponents(result.components);
       setWires(result.wires);
       setMultimeter(result.multimeter);
 
       // Acoustic WebAudio synthesis
-      const speaker = result.components.find((c) => c.type === 'SPEAKER');
-      if (speaker) {
+      const speaker = result.components.find((c) => c.type === 'SPEAKER' && c.health !== 'BURNED_OUT');
+      if (speaker && speaker.voltageDrop > 0.05) {
         audioEngine.updateSpeaker(speaker.voltageDrop, 440);
       } else {
         audioEngine.updateSpeaker(0);
@@ -100,7 +111,7 @@ export default function OhmicWorkbenchPage() {
     }, 50);
 
     return () => clearInterval(interval);
-  }, [components, wires, multimeter, ambientTemperature, isSimulating]);
+  }, [ambientTemperature, isSimulating]);
 
   // Rotation Handler (supports CW and CCW with 'R' and Shift+'R')
   const handleRotateSelected = useCallback(
@@ -167,7 +178,11 @@ export default function OhmicWorkbenchPage() {
   // Unified Immediate Circuit Solver & State Synchronizer
   const applyCircuitUpdate = useCallback(
     (newComps: CircuitComponent[], newWires: JumperWire[]) => {
+      componentsRef.current = newComps;
+      wiresRef.current = newWires;
       const result = solveCircuit(newComps, newWires, multimeterRef.current, ambientTemperature);
+      componentsRef.current = result.components;
+      wiresRef.current = result.wires;
       setComponents(result.components);
       setWires(result.wires);
       setMultimeter(result.multimeter);
@@ -552,7 +567,9 @@ export default function OhmicWorkbenchPage() {
   // Select Preset Handler
   const handleSelectPreset = useCallback((preset: PresetCircuit) => {
     setActivePresetId(preset.id);
-    applyCircuitUpdate(preset.components, preset.wires);
+    const freshComponents: CircuitComponent[] = JSON.parse(JSON.stringify(preset.components));
+    const freshWires: JumperWire[] = JSON.parse(JSON.stringify(preset.wires));
+    applyCircuitUpdate(freshComponents, freshWires);
     setSelectedComponentId(null);
     setSelectedWireId(null);
   }, [applyCircuitUpdate]);
@@ -608,9 +625,7 @@ export default function OhmicWorkbenchPage() {
         onToggleSimulate={() => setIsSimulating(!isSimulating)}
         onReset={() => {
           const resetPreset = getPresetCircuits()[0];
-          setActivePresetId(resetPreset.id);
-          setComponents(resetPreset.components);
-          setWires(resetPreset.wires);
+          handleSelectPreset(resetPreset);
         }}
         onSelectPreset={handleSelectPreset}
         activePresetId={activePresetId}
