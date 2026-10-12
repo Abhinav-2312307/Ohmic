@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import TopToolbar, { WorkbenchTool, WIRE_COLORS } from '../components/TopToolbar';
 import ComponentDrawer from '../components/ComponentDrawer';
@@ -57,6 +57,7 @@ export default function OhmicWorkbenchPage() {
   } | null>(null);
 
   // Selected Entities
+  const [activePresetId, setActivePresetId] = useState<string>('led_basic');
   const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null);
   const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -73,6 +74,11 @@ export default function OhmicWorkbenchPage() {
     blackProbeHoleId: undefined,
   });
   const [instrumentTab, setInstrumentTab] = useState<'DMM' | 'SCOPE' | 'NONE'>('NONE');
+
+  const multimeterRef = useRef(multimeter);
+  useEffect(() => {
+    multimeterRef.current = multimeter;
+  }, [multimeter]);
 
   // Simulation Solve Loop (20Hz real-time MNA solver)
   useEffect(() => {
@@ -108,14 +114,14 @@ export default function OhmicWorkbenchPage() {
         const updated = prev.map((c) => (c.id === selectedComponentId ? rotated : c));
         setWires((prevWires) => {
           const updatedWires = updateWiresForComponent(rotated, updated, prevWires);
-          const result = solveCircuit(updated, updatedWires, multimeter, ambientTemperature);
+          const result = solveCircuit(updated, updatedWires, multimeterRef.current, ambientTemperature);
           setMultimeter(result.multimeter);
           return result.wires;
         });
         return updated;
       });
     },
-    [selectedComponentId, multimeter, ambientTemperature]
+    [selectedComponentId, ambientTemperature]
   );
 
   // Movement Handler (step-by-step nudge on breadboard or workbench mat)
@@ -131,14 +137,14 @@ export default function OhmicWorkbenchPage() {
         const updated = prev.map((c) => (c.id === selectedComponentId ? nudged : c));
         setWires((prevWires) => {
           const updatedWires = updateWiresForComponent(nudged, updated, prevWires);
-          const result = solveCircuit(updated, updatedWires, multimeter, ambientTemperature);
+          const result = solveCircuit(updated, updatedWires, multimeterRef.current, ambientTemperature);
           setMultimeter(result.multimeter);
           return result.wires;
         });
         return updated;
       });
     },
-    [selectedComponentId, multimeter, ambientTemperature]
+    [selectedComponentId, ambientTemperature]
   );
 
   // Direct move handler for 3D mouse drag
@@ -148,25 +154,25 @@ export default function OhmicWorkbenchPage() {
         const updated = prev.map((c) => (c.id === id ? updatedComp : c));
         setWires((prevWires) => {
           const updatedWires = updateWiresForComponent(updatedComp, updated, prevWires);
-          const result = solveCircuit(updated, updatedWires, multimeter, ambientTemperature);
+          const result = solveCircuit(updated, updatedWires, multimeterRef.current, ambientTemperature);
           setMultimeter(result.multimeter);
           return result.wires;
         });
         return updated;
       });
     },
-    [multimeter, ambientTemperature]
+    [ambientTemperature]
   );
 
   // Unified Immediate Circuit Solver & State Synchronizer
   const applyCircuitUpdate = useCallback(
     (newComps: CircuitComponent[], newWires: JumperWire[]) => {
-      const result = solveCircuit(newComps, newWires, multimeter, ambientTemperature);
+      const result = solveCircuit(newComps, newWires, multimeterRef.current, ambientTemperature);
       setComponents(result.components);
       setWires(result.wires);
       setMultimeter(result.multimeter);
     },
-    [multimeter, ambientTemperature]
+    [ambientTemperature]
   );
 
   // Deletion Helpers
@@ -343,8 +349,8 @@ export default function OhmicWorkbenchPage() {
         const lastPos = getHolePosition(holeIds[holeIds.length - 1], components);
         x = firstPos && lastPos ? (firstPos[0] + lastPos[0]) / 2 : 0;
         z = firstPos && lastPos ? (firstPos[1] + lastPos[1]) / 2 : 0;
-      } else if (type === 'BATTERY_9V') {
-        x = -0.06;
+      } else if (type === 'BATTERY_9V' || type === 'DC_SOURCE') {
+        x = type === 'DC_SOURCE' ? 0.055 : -0.06;
         z = 0.055;
         y = 0.0;
       }
@@ -395,6 +401,16 @@ export default function OhmicWorkbenchPage() {
           ];
           break;
 
+        case 'DC_SOURCE':
+          name = 'Bench DC Power Supply (5V)';
+          modelUrl = '/models/power/battery_9v.glb';
+          unit = 'V';
+          pins = [
+            { id: 'pos', name: '+', relativePos: [0.0064, 0, 0.048], connectedHoleId: `${id}:pos` },
+            { id: 'neg', name: '-', relativePos: [-0.0064, 0, 0.048], connectedHoleId: `${id}:neg` },
+          ];
+          break;
+
         case 'POTENTIOMETER':
           name = '10kΩ Potentiometer';
           modelUrl = '/models/components/potentiometer_10k.glb';
@@ -417,12 +433,32 @@ export default function OhmicWorkbenchPage() {
           break;
 
         case 'CAPACITOR_ELECTROLYTIC':
-          name = '100µF Capacitor';
+          name = '100µF Electrolytic Capacitor';
           modelUrl = '/models/components/capacitor_electrolytic.glb';
           unit = 'µF';
           pins = [
             { id: 'cp1', name: '+', relativePos: [0.00127, 0, 0], connectedHoleId: holeIds[0] },
             { id: 'cp2', name: '-', relativePos: [-0.00127, 0, 0], connectedHoleId: holeIds[1] },
+          ];
+          break;
+
+        case 'CAPACITOR_CERAMIC':
+          name = '0.1µF Ceramic Capacitor';
+          modelUrl = '/models/components/capacitor_electrolytic.glb';
+          unit = 'µF';
+          pins = [
+            { id: 'cp1', name: 'Pin 1', relativePos: [-0.00127, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'cp2', name: 'Pin 2', relativePos: [0.00127, 0, 0], connectedHoleId: holeIds[1] },
+          ];
+          break;
+
+        case 'INDUCTOR_TOROID':
+          name = '10mH Toroid Inductor';
+          modelUrl = '/models/components/inductor_toroid.glb';
+          unit = 'mH';
+          pins = [
+            { id: 'l1', name: 'Pin 1', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'l2', name: 'Pin 2', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[1] },
           ];
           break;
 
@@ -434,6 +470,44 @@ export default function OhmicWorkbenchPage() {
             { id: 'sw1', name: 'Pin 1', relativePos: [-0.002, 0, 0], connectedHoleId: holeIds[0] },
             { id: 'sw2', name: 'Pin 2', relativePos: [0.002, 0, 0], connectedHoleId: holeIds[1] },
           ];
+          break;
+
+        case 'SWITCH_TOGGLE':
+          name = 'Toggle Switch';
+          modelUrl = '/models/components/button_tactile_6mm.glb';
+          unit = 'sw';
+          pins = [
+            { id: 'sw1', name: 'Pin 1', relativePos: [-0.002, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'sw2', name: 'Pin 2', relativePos: [0.002, 0, 0], connectedHoleId: holeIds[1] },
+          ];
+          break;
+
+        case 'DIP8_555':
+          name = 'NE555 Timer IC';
+          modelUrl = '/models/components/dip8_ic.glb';
+          unit = 'IC';
+          pins = [
+            { id: 'p1', name: 'GND (1)', relativePos: [-0.00381, -0.00381, 0], connectedHoleId: holeIds[0] },
+            { id: 'p2', name: 'TRIG (2)', relativePos: [-0.00127, -0.00381, 0], connectedHoleId: holeIds[1] },
+            { id: 'p3', name: 'OUT (3)', relativePos: [0.00127, -0.00381, 0], connectedHoleId: holeIds[2] },
+            { id: 'p4', name: 'RESET (4)', relativePos: [0.00381, -0.00381, 0], connectedHoleId: holeIds[3] },
+            { id: 'p5', name: 'CTRL (5)', relativePos: [-0.00381, 0.00381, 0], connectedHoleId: holeIds[4] },
+            { id: 'p6', name: 'THRES (6)', relativePos: [-0.00127, 0.00381, 0], connectedHoleId: holeIds[5] },
+            { id: 'p7', name: 'DISCH (7)', relativePos: [0.00127, 0.00381, 0], connectedHoleId: holeIds[6] },
+            { id: 'p8', name: 'VCC (8)', relativePos: [0.00381, 0.00381, 0], connectedHoleId: holeIds[7] },
+          ];
+          break;
+
+        case 'DISPLAY_7SEG':
+          name = '7-Segment LED Display';
+          modelUrl = '/models/components/display_7seg_1digit.glb';
+          unit = 'DISP';
+          pins = holeIds.map((hid, idx) => ({
+            id: `p${idx + 1}`,
+            name: `Pin ${idx + 1}`,
+            relativePos: [(idx % 5 - 2) * 0.00254, idx < 5 ? -0.00381 : 0.00381, 0] as [number, number, number],
+            connectedHoleId: hid,
+          }));
           break;
 
         default:
@@ -476,14 +550,48 @@ export default function OhmicWorkbenchPage() {
 
 
   // Select Preset Handler
-  const handleSelectPreset = (preset: PresetCircuit) => {
+  const handleSelectPreset = useCallback((preset: PresetCircuit) => {
+    setActivePresetId(preset.id);
     applyCircuitUpdate(preset.components, preset.wires);
     setSelectedComponentId(null);
     setSelectedWireId(null);
-  };
+  }, [applyCircuitUpdate]);
+
+  // Deep-link preset loading via URL query parameter (e.g. ?preset=pot_lamp, ?preset=3, ?preset=burnout)
+  const hasLoadedUrlPreset = useRef(false);
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !hasLoadedUrlPreset.current) {
+      hasLoadedUrlPreset.current = true;
+      const params = new URLSearchParams(window.location.search);
+      const presetParam = params.get('preset');
+      if (presetParam) {
+        const presets = getPresetCircuits();
+        const norm = presetParam.toLowerCase().trim();
+        let found = presets.find((p) => p.id.toLowerCase() === norm);
+        if (!found) {
+          const num = parseInt(norm, 10);
+          if (!isNaN(num) && num >= 1 && num <= presets.length) {
+            found = presets[num - 1];
+          } else if (norm.includes('burn') || norm.includes('thermal') || norm.includes('overload')) {
+            found = presets.find((p) => p.id === 'burnout_demo');
+          } else if (norm.includes('pot') || norm.includes('dim') || norm.includes('lamp')) {
+            found = presets.find((p) => p.id === 'pot_lamp');
+          } else if (norm.includes('spk') || norm.includes('speak') || norm.includes('tone') || norm.includes('audio')) {
+            found = presets.find((p) => p.id === 'speaker_osc');
+          } else if (norm.includes('led') || norm.includes('basic')) {
+            found = presets.find((p) => p.id === 'led_basic');
+          }
+        }
+        if (found) {
+          handleSelectPreset(found);
+        }
+      }
+    }
+  }, [handleSelectPreset]);
 
   // Clear Canvas Handler
   const handleClear = () => {
+    setActivePresetId('');
     applyCircuitUpdate([], []);
     setSelectedComponentId(null);
     setSelectedWireId(null);
@@ -500,10 +608,12 @@ export default function OhmicWorkbenchPage() {
         onToggleSimulate={() => setIsSimulating(!isSimulating)}
         onReset={() => {
           const resetPreset = getPresetCircuits()[0];
+          setActivePresetId(resetPreset.id);
           setComponents(resetPreset.components);
           setWires(resetPreset.wires);
         }}
         onSelectPreset={handleSelectPreset}
+        activePresetId={activePresetId}
         ambientTemperature={ambientTemperature}
         onSetAmbientTemperature={setAmbientTemperature}
         wireColor={wireColor}
@@ -546,9 +656,8 @@ export default function OhmicWorkbenchPage() {
             if (wire) setSelectedComponentId(null);
           }}
           onComponentStateChange={(id, newState) => {
-            setComponents((prev) =>
-              prev.map((c) => (c.id === id ? { ...c, state: { ...c.state, ...newState } } : c))
-            );
+            const next = components.map((c) => (c.id === id ? { ...c, state: { ...c.state, ...newState } } : c));
+            applyCircuitUpdate(next, wires);
           }}
           onSetProbeHole={(probe, holeId) => {
             setMultimeter((prev) => ({
@@ -585,14 +694,31 @@ export default function OhmicWorkbenchPage() {
         <PropertyInspector
           selectedComponent={selectedComp}
           selectedWire={selectedWire}
-          onUpdateValue={(id, val) =>
-            setComponents((prev) => prev.map((c) => (c.id === id ? { ...c, value: val } : c)))
-          }
-          onUpdateState={(id, newState) =>
-            setComponents((prev) =>
-              prev.map((c) => (c.id === id ? { ...c, state: { ...c.state, ...newState } } : c))
-            )
-          }
+          onUpdateValue={(id, val) => {
+            const next = components.map((c) => (c.id === id ? { ...c, value: val } : c));
+            applyCircuitUpdate(next, wires);
+          }}
+          onUpdateState={(id, newState) => {
+            const next = components.map((c) =>
+              c.id === id ? { ...c, state: { ...c.state, ...newState } } : c
+            );
+            applyCircuitUpdate(next, wires);
+          }}
+          onResetHealth={(id) => {
+            const next = components.map((c) =>
+              c.id === id
+                ? {
+                    ...c,
+                    health: 'NORMAL' as const,
+                    temperature: ambientTemperature,
+                    powerDissipated: 0,
+                    voltageDrop: 0,
+                    current: 0,
+                  }
+                : c
+            );
+            applyCircuitUpdate(next, wires);
+          }}
           onDeleteComponent={(id) => {
             deleteComponentAndWires(id);
           }}

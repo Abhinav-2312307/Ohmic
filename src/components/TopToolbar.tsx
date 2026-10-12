@@ -35,6 +35,7 @@ interface TopToolbarProps {
   onToggleMute: () => void;
   onClear: () => void;
 
+  activePresetId?: string;
   activeTool: WorkbenchTool;
   onSelectTool: (tool: WorkbenchTool) => void;
   onRotateSelected?: (direction: 'CW' | 'CCW') => void;
@@ -67,6 +68,7 @@ export default function TopToolbar({
   isMuted,
   onToggleMute,
   onClear,
+  activePresetId,
   activeTool,
   onSelectTool,
   onRotateSelected,
@@ -115,7 +117,7 @@ export default function TopToolbar({
                 const selected = presets.find((p) => p.id === e.target.value);
                 if (selected) onSelectPreset(selected);
               }}
-              defaultValue=""
+              value={activePresetId || ''}
               className="bg-transparent text-zinc-200 text-xs font-mono focus:outline-none cursor-pointer pr-4"
             >
               <option value="" disabled className="bg-zinc-900 text-zinc-400">

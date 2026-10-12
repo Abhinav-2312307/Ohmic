@@ -826,8 +826,8 @@ export default function CircuitWorkbench3D({
         componentMeshesRef.current.set(comp.id, compGroup);
         compContainer.add(compGroup);
 
-        // Attach interactive snap terminals for 9V Battery
-        if (comp.type === 'BATTERY_9V') {
+        // Attach interactive snap terminals for 9V Battery or DC Power Supply
+        if (comp.type === 'BATTERY_9V' || comp.type === 'DC_SOURCE') {
           // Positive Stud (+) with red collar ring
           const posTermGeo = new THREE.CylinderGeometry(0.0032, 0.0032, 0.005, 16);
           const posTermMat = new THREE.MeshStandardMaterial({
@@ -999,6 +999,7 @@ export default function CircuitWorkbench3D({
         modelUrl = '/models/components/bulb_incandescent.glb';
         break;
       case 'BATTERY_9V':
+      case 'DC_SOURCE':
         modelUrl = '/models/power/battery_9v.glb';
         break;
       case 'POTENTIOMETER':
@@ -1008,10 +1009,18 @@ export default function CircuitWorkbench3D({
         modelUrl = '/models/components/speaker_8ohm.glb';
         break;
       case 'SWITCH_TACTILE':
+      case 'SWITCH_TOGGLE':
         modelUrl = '/models/components/button_tactile_6mm.glb';
         break;
       case 'CAPACITOR_ELECTROLYTIC':
+      case 'CAPACITOR_CERAMIC':
         modelUrl = '/models/components/capacitor_electrolytic.glb';
+        break;
+      case 'INDUCTOR_TOROID':
+        modelUrl = '/models/components/inductor_toroid.glb';
+        break;
+      case 'DISPLAY_7SEG':
+        modelUrl = '/models/components/display_7seg_1digit.glb';
         break;
       case 'DIP8_555':
         modelUrl = '/models/components/dip8_ic.glb';
@@ -1530,8 +1539,8 @@ export default function CircuitWorkbench3D({
       const ghost = ghostGroupRef.current;
       ghost.visible = true;
 
-      if (placingComponent.type === 'BATTERY_9V') {
-        // Battery rests outside breadboard on ESD bench mat (Y = 0)
+      if (placingComponent.type === 'BATTERY_9V' || placingComponent.type === 'DC_SOURCE') {
+        // Voltage source rests outside breadboard on ESD bench mat (Y = 0)
         const benchMatPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
         const matIntersect = new THREE.Vector3();
         raycaster.ray.intersectPlane(benchMatPlane, matIntersect);
@@ -1540,7 +1549,7 @@ export default function CircuitWorkbench3D({
         ghost.rotation.set(0, (placementRotationDeg * Math.PI) / 180, 0);
 
         updateStatus(
-          `Place 9V Battery on Bench Mat outside breadboard • Press 'R' to Rotate • Click to Place`
+          `Place ${placingComponent.type === 'DC_SOURCE' ? 'Bench DC Supply' : '9V Battery'} on Bench Mat outside breadboard • Press 'R' to Rotate • Click to Place`
         );
         return;
       }
@@ -1698,17 +1707,17 @@ export default function CircuitWorkbench3D({
 
     // 2. Component Placement Mode
     if (placingComponent) {
-      if (placingComponent.type === 'BATTERY_9V') {
+      if (placingComponent.type === 'BATTERY_9V' || placingComponent.type === 'DC_SOURCE') {
         const benchMatPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
         const matIntersect = new THREE.Vector3();
         raycaster.ray.intersectPlane(benchMatPlane, matIntersect);
 
         audioEngine.playSnapSound();
         onPlaceComponent(
-          'BATTERY_9V',
+          placingComponent.type,
           [],
           placementRotationDeg,
-          9,
+          placingComponent.defaultValue ?? (placingComponent.type === 'DC_SOURCE' ? 5 : 9),
           [matIntersect.x, matIntersect.z, 0]
         );
         setHoveredTargetHoles([]);
@@ -1792,7 +1801,17 @@ export default function CircuitWorkbench3D({
           if (hit.userData.componentId) {
             const comp = components.find((c) => c.id === hit.userData.componentId) || null;
             if (comp) {
-              audioEngine.playKnobClick();
+              if (comp.type === 'SWITCH_TACTILE' || comp.type === 'SWITCH_TOGGLE') {
+                const nextClosed = !(comp.state?.isClosed ?? false);
+                if (nextClosed) {
+                  audioEngine.playSnapSound();
+                } else {
+                  audioEngine.playPopSound();
+                }
+                onComponentStateChange(comp.id, { isClosed: nextClosed });
+              } else {
+                audioEngine.playKnobClick();
+              }
               onSelectComponent(comp);
               onSelectWire(null);
               return;

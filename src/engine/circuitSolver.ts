@@ -448,19 +448,22 @@ export function solveCircuit(
 
     // Thermal calculation: deltaT = Power * Thermal_Resistance
     const thetaJA = 120; // °C / W
-    const tempRise = power * thetaJA;
-    updated.temperature = ambientTemperature + tempRise;
+    const targetTemp = ambientTemperature + power * thetaJA;
+    const currentTemp = comp.temperature ?? ambientTemperature;
+    // Progressive thermal rise for observable overheating transition
+    const tempStep = Math.max(12, (targetTemp - currentTemp) * 0.25);
+    updated.temperature = Math.min(targetTemp, currentTemp + tempStep);
 
     // Check Overheating and Burnout
     const maxP = updated.maxPowerRating ?? (updated.type === 'LED' ? 0.15 : 0.25);
     const maxCurrent = updated.type === 'LED' ? 0.045 : 2.0;
-    if (power > maxP * 2.5 || updated.temperature > 160 || iCurrent > maxCurrent * 2.0) {
+    if (updated.temperature > 150 || (power > maxP * 2.5 && updated.temperature > 110) || iCurrent > maxCurrent * 2.0) {
       updated.health = 'BURNED_OUT';
       updated.isEmitting = false;
       updated.emissionIntensity = 0;
-    } else if (power > maxP * 1.2 || updated.temperature > 90 || iCurrent > maxCurrent) {
+    } else if (power > maxP * 1.2 || updated.temperature > 85 || iCurrent > maxCurrent) {
       updated.health = 'OVERHEATING';
-    } else if (power > maxP * 0.7) {
+    } else if (power > maxP * 0.7 || updated.temperature > 45) {
       updated.health = 'WARM';
     } else {
       updated.health = 'NORMAL';
