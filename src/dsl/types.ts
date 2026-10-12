@@ -22,6 +22,13 @@ export enum TokenType {
   KW_IND       = 'KW_IND',
   KW_IC555     = 'KW_IC555',
   KW_SEG7      = 'KW_SEG7',
+  KW_DIODE     = 'KW_DIODE',
+  KW_NPN       = 'KW_NPN',
+  KW_PNP       = 'KW_PNP',
+  KW_MOSFET    = 'KW_MOSFET',
+  KW_LDR       = 'KW_LDR',
+  KW_LM358     = 'KW_LM358',
+  KW_MB102     = 'KW_MB102',
 
   // Keywords — Commands
   KW_PLACE     = 'KW_PLACE',
@@ -174,17 +181,24 @@ export const COLOR_NAME_MAP: Record<string, string> = {
 
 // ── Component Keyword Map ────────────────────────────────────────────────────
 export const COMPONENT_KEYWORDS: Record<string, TokenType> = {
-  bat:   TokenType.KW_BAT,
-  res:   TokenType.KW_RES,
-  led:   TokenType.KW_LED,
-  pot:   TokenType.KW_POT,
-  bulb:  TokenType.KW_BULB,
-  spk:   TokenType.KW_SPK,
-  sw:    TokenType.KW_SW,
-  cap:   TokenType.KW_CAP,
-  ind:   TokenType.KW_IND,
-  ic555: TokenType.KW_IC555,
-  seg7:  TokenType.KW_SEG7,
+  bat:    TokenType.KW_BAT,
+  res:    TokenType.KW_RES,
+  led:    TokenType.KW_LED,
+  pot:    TokenType.KW_POT,
+  bulb:   TokenType.KW_BULB,
+  spk:    TokenType.KW_SPK,
+  sw:     TokenType.KW_SW,
+  cap:    TokenType.KW_CAP,
+  ind:    TokenType.KW_IND,
+  ic555:  TokenType.KW_IC555,
+  seg7:   TokenType.KW_SEG7,
+  diode:  TokenType.KW_DIODE,
+  npn:    TokenType.KW_NPN,
+  pnp:    TokenType.KW_PNP,
+  mosfet: TokenType.KW_MOSFET,
+  ldr:    TokenType.KW_LDR,
+  lm358:  TokenType.KW_LM358,
+  mb102:  TokenType.KW_MB102,
 };
 
 export const COMMAND_KEYWORDS: Record<string, TokenType> = {

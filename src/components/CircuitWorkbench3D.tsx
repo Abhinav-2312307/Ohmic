@@ -804,6 +804,198 @@ export default function CircuitWorkbench3D({
     });
   };
 
+  // Helper: Build procedural 3D meshes for components that lack external GLTF files
+  const buildProceduralMesh = (comp: { type: ComponentType; id?: string; [key: string]: any }): THREE.Group => {
+    const group = new THREE.Group();
+
+    switch (comp.type) {
+      case 'DIODE_1N4148': {
+        // DO-35 glass envelope with orange interior and black cathode band
+        const bodyGeo = new THREE.CylinderGeometry(0.0012, 0.0012, 0.004, 16);
+        const bodyMat = new THREE.MeshPhysicalMaterial({
+          color: 0xf97316,
+          roughness: 0.15,
+          transmission: 0.8,
+          transparent: true,
+          opacity: 0.85,
+        });
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.rotation.z = Math.PI / 2;
+        body.position.y = 0.003;
+        group.add(body);
+
+        // Black cathode stripe
+        const bandGeo = new THREE.CylinderGeometry(0.00122, 0.00122, 0.0008, 16);
+        const bandMat = new THREE.MeshStandardMaterial({ color: 0x09090b, roughness: 0.5 });
+        const band = new THREE.Mesh(bandGeo, bandMat);
+        band.rotation.z = Math.PI / 2;
+        band.position.set(0.0012, 0.003, 0);
+        group.add(band);
+
+        // Axial silver leads
+        const leadMat = new THREE.MeshStandardMaterial({ color: 0xd4d4d8, metalness: 0.9, roughness: 0.2 });
+        [-0.00381, 0.00381].forEach((x) => {
+          const lead = new THREE.Mesh(new THREE.CylinderGeometry(0.0003, 0.0003, 0.007, 8), leadMat);
+          lead.position.set(x, 0.0005, 0);
+          group.add(lead);
+        });
+        break;
+      }
+
+      case 'DIODE_1N4007': {
+        // DO-41 molded black epoxy cylinder with silver cathode stripe
+        const bodyGeo = new THREE.CylinderGeometry(0.0016, 0.0016, 0.0055, 16);
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.45 });
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.rotation.z = Math.PI / 2;
+        body.position.y = 0.003;
+        group.add(body);
+
+        // Silver cathode stripe
+        const stripeGeo = new THREE.CylinderGeometry(0.00162, 0.00162, 0.001, 16);
+        const stripeMat = new THREE.MeshStandardMaterial({ color: 0xd4d4d8, metalness: 0.85, roughness: 0.25 });
+        const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+        stripe.rotation.z = Math.PI / 2;
+        stripe.position.set(0.0018, 0.003, 0);
+        group.add(stripe);
+
+        // Axial silver leads
+        const leadMat = new THREE.MeshStandardMaterial({ color: 0xd4d4d8, metalness: 0.9, roughness: 0.2 });
+        [-0.00381, 0.00381].forEach((x) => {
+          const lead = new THREE.Mesh(new THREE.CylinderGeometry(0.0004, 0.0004, 0.007, 8), leadMat);
+          lead.position.set(x, 0.0005, 0);
+          group.add(lead);
+        });
+        break;
+      }
+
+      case 'TRANSISTOR_NPN_BC547':
+      case 'TRANSISTOR_PNP_BC557':
+      case 'TRANSISTOR_NPN_2N2222': {
+        // TO-92 D-shaped molded body
+        const bodyGeo = new THREE.CylinderGeometry(0.0025, 0.0025, 0.005, 16, 1, false, 0, Math.PI);
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.35 });
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.position.y = 0.0035;
+        group.add(body);
+
+        const flatFace = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.005, 0.0004), bodyMat);
+        flatFace.position.set(0, 0.0035, 0);
+        group.add(flatFace);
+
+        // 3 inline leads (C, B, E)
+        const leadMat = new THREE.MeshStandardMaterial({ color: 0xd4d4d8, metalness: 0.9, roughness: 0.2 });
+        [-0.00254, 0, 0.00254].forEach((x) => {
+          const lead = new THREE.Mesh(new THREE.CylinderGeometry(0.0003, 0.0003, 0.007, 8), leadMat);
+          lead.position.set(x, 0.0005, 0);
+          group.add(lead);
+        });
+        break;
+      }
+
+      case 'MOSFET_N_LOGIC': {
+        // Power package with rear silver heatsink tab
+        const bodyGeo = new THREE.BoxGeometry(0.005, 0.006, 0.0025);
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.4 });
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.position.y = 0.004;
+        group.add(body);
+
+        const tabGeo = new THREE.BoxGeometry(0.0045, 0.004, 0.0006);
+        const tabMat = new THREE.MeshStandardMaterial({ color: 0xd4d4d8, metalness: 0.95, roughness: 0.15 });
+        const tab = new THREE.Mesh(tabGeo, tabMat);
+        tab.position.set(0, 0.006, -0.0013);
+        group.add(tab);
+
+        // 3 inline leads (G, D, S)
+        const leadMat = new THREE.MeshStandardMaterial({ color: 0xd4d4d8, metalness: 0.9, roughness: 0.2 });
+        [-0.00254, 0, 0.00254].forEach((x) => {
+          const lead = new THREE.Mesh(new THREE.CylinderGeometry(0.0003, 0.0003, 0.007, 8), leadMat);
+          lead.position.set(x, 0.0005, 0);
+          group.add(lead);
+        });
+        break;
+      }
+
+      case 'LDR_PHOTORESISTOR': {
+        // 5mm ceramic disc with serpentine CdS trace
+        const discGeo = new THREE.CylinderGeometry(0.0026, 0.0026, 0.0012, 20);
+        const discMat = new THREE.MeshStandardMaterial({ color: 0xf4f4f5, roughness: 0.5 });
+        const disc = new THREE.Mesh(discGeo, discMat);
+        disc.position.y = 0.004;
+        group.add(disc);
+
+        const trackGeo = new THREE.BoxGeometry(0.0035, 0.0002, 0.0035);
+        const trackMat = new THREE.MeshStandardMaterial({ color: 0xea580c, roughness: 0.3 });
+        const track = new THREE.Mesh(trackGeo, trackMat);
+        track.position.y = 0.0047;
+        group.add(track);
+
+        // 2 leads
+        const leadMat = new THREE.MeshStandardMaterial({ color: 0xd4d4d8, metalness: 0.9, roughness: 0.2 });
+        [-0.00127, 0.00127].forEach((x) => {
+          const lead = new THREE.Mesh(new THREE.CylinderGeometry(0.0003, 0.0003, 0.007, 8), leadMat);
+          lead.position.set(x, 0.0005, 0);
+          group.add(lead);
+        });
+        break;
+      }
+
+      case 'POWER_MODULE_MB102': {
+        // Blue Dual-Rail Breadboard Power Supply Board
+        const pcbGeo = new THREE.BoxGeometry(0.052, 0.0018, 0.032);
+        const pcbMat = new THREE.MeshStandardMaterial({ color: 0x1e3a8a, roughness: 0.35 });
+        const pcb = new THREE.Mesh(pcbGeo, pcbMat);
+        pcb.position.y = 0.006;
+        group.add(pcb);
+
+        // USB socket
+        const usbGeo = new THREE.BoxGeometry(0.012, 0.006, 0.010);
+        const usbMat = new THREE.MeshStandardMaterial({ color: 0xd4d4d8, metalness: 0.9, roughness: 0.2 });
+        const usb = new THREE.Mesh(usbGeo, usbMat);
+        usb.position.set(-0.016, 0.009, 0.008);
+        group.add(usb);
+
+        // DC Barrel Jack
+        const jackGeo = new THREE.CylinderGeometry(0.0045, 0.0045, 0.011, 16);
+        const jackMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.5 });
+        const jack = new THREE.Mesh(jackGeo, jackMat);
+        jack.rotation.z = Math.PI / 2;
+        jack.position.set(-0.016, 0.009, -0.008);
+        group.add(jack);
+
+        // Yellow power latch button
+        const btnGeo = new THREE.CylinderGeometry(0.0025, 0.0025, 0.004, 16);
+        const btnMat = new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.3 });
+        const btn = new THREE.Mesh(btnGeo, btnMat);
+        btn.position.set(0.008, 0.008, 0);
+        group.add(btn);
+
+        // Green power indicator LED
+        const pwrLedGeo = new THREE.SphereGeometry(0.0015, 12, 12);
+        const pwrLedMat = new THREE.MeshStandardMaterial({ color: 0x22c55e, emissive: 0x22c55e, emissiveIntensity: 0.9 });
+        const pwrLed = new THREE.Mesh(pwrLedGeo, pwrLedMat);
+        pwrLed.position.set(0.016, 0.0075, 0.008);
+        group.add(pwrLed);
+        break;
+      }
+
+      default: {
+        const fallbackGeo = new THREE.BoxGeometry(0.012, 0.006, 0.006);
+        const fallbackMat = new THREE.MeshStandardMaterial({ color: 0x06b6d4, roughness: 0.4 });
+        group.add(new THREE.Mesh(fallbackGeo, fallbackMat));
+      }
+    }
+
+    group.traverse((c) => {
+      if ((c as THREE.Mesh).isMesh) {
+        c.userData = { componentId: comp.id, isCircuitComponent: true };
+      }
+    });
+
+    return group;
+  };
+
   // 2. Render & Reconcile Placed Components (Flicker-Free Diffing)
   useEffect(() => {
     const scene = sceneRef.current;
@@ -1044,6 +1236,12 @@ export default function CircuitWorkbench3D({
               compGroup.add(fallbackMesh);
             }
           );
+        } else {
+          // Procedurally modeled 3D semiconductor / passive component
+          const procMesh = buildProceduralMesh(comp);
+          record!.loadedModel = procMesh;
+          compGroup.add(procMesh);
+          updateModelMaterials(procMesh, comp);
         }
       }
 
@@ -1175,6 +1373,7 @@ export default function CircuitWorkbench3D({
         modelUrl = '/models/components/display_7seg_1digit.glb';
         break;
       case 'DIP8_555':
+      case 'DIP8_LM358':
         modelUrl = '/models/components/dip8_ic.glb';
         break;
     }
@@ -1209,6 +1408,22 @@ export default function CircuitWorkbench3D({
           ghost.add(fallback);
         }
       );
+    } else {
+      // Holographic ghost preview from procedural 3D model
+      const procClone = buildProceduralMesh(placingComponent);
+      procClone.traverse((c) => {
+        if ((c as THREE.Mesh).isMesh) {
+          (c as THREE.Mesh).material = new THREE.MeshStandardMaterial({
+            color: 0x06b6d4,
+            transparent: true,
+            opacity: 0.65,
+            roughness: 0.3,
+            emissive: 0x0891b2,
+            emissiveIntensity: 0.3,
+          });
+        }
+      });
+      ghost.add(procClone);
     }
   }, [placingComponent]);
 

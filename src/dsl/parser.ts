@@ -157,6 +157,13 @@ export class Parser {
       [TokenType.KW_IND]: 'ind',
       [TokenType.KW_IC555]: 'ic555',
       [TokenType.KW_SEG7]: 'seg7',
+      [TokenType.KW_DIODE]: 'diode',
+      [TokenType.KW_NPN]: 'npn',
+      [TokenType.KW_PNP]: 'pnp',
+      [TokenType.KW_MOSFET]: 'mosfet',
+      [TokenType.KW_LDR]: 'ldr',
+      [TokenType.KW_LM358]: 'lm358',
+      [TokenType.KW_MB102]: 'mb102',
     };
     return map[type] || 'unknown';
   }

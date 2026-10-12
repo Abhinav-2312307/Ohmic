@@ -12,7 +12,16 @@ export type ComponentType =
   | 'SWITCH_TACTILE'
   | 'SWITCH_TOGGLE'
   | 'DIP8_555'
-  | 'DISPLAY_7SEG';
+  | 'DISPLAY_7SEG'
+  | 'DIODE_1N4148'
+  | 'DIODE_1N4007'
+  | 'TRANSISTOR_NPN_BC547'
+  | 'TRANSISTOR_PNP_BC557'
+  | 'TRANSISTOR_NPN_2N2222'
+  | 'MOSFET_N_LOGIC'
+  | 'LDR_PHOTORESISTOR'
+  | 'DIP8_LM358'
+  | 'POWER_MODULE_MB102';
 
 export type ComponentHealth = 'NORMAL' | 'WARM' | 'OVERHEATING' | 'BURNED_OUT';
 
@@ -39,7 +48,12 @@ export interface CircuitComponent {
   maxPowerRating?: number; // Watts (e.g. 0.25W for standard 1/4W resistor)
   maxVoltageRating?: number; // Volts
   forwardVoltage?: number; // for LED / Diode (e.g. 2.0V for Red, 3.2V for Blue)
-  ledColor?: 'RED' | 'GREEN' | 'BLUE' | 'YELLOW';
+  ledColor?: 'RED' | 'GREEN' | 'BLUE' | 'YELLOW' | 'WHITE';
+  diodeThreshold?: number; // Forward conduction drop (e.g. 0.7V for 1N4007, 0.72V for 1N4148)
+  hfe?: number; // DC current gain beta for BJTs (e.g. 200 for BC547, 100 for 2N2222)
+  vth?: number; // Gate threshold voltage for MOSFETs (e.g. 2.0V)
+  rdsOn?: number; // On-state channel resistance for MOSFETs (e.g. 0.05Ω)
+  lightLevel?: number; // 0.0 (dark) to 1.0 (bright) for LDR
   
   // Dynamic Simulation Metrics
   voltageDrop: number; // V
@@ -56,6 +70,9 @@ export interface CircuitComponent {
     wiperRatio?: number; // 0.0 to 1.0 for Potentiometer
     activeSegments?: boolean[]; // For 7-segment display (A, B, C, D, E, F, G, DP)
     frequency?: number; // For speaker / oscillator
+    outputVoltageRail?: 3.3 | 5.0; // For MB102 Power Supply module
+    timerState?: { flipFlop: boolean; lastTriggerTime: number }; // For 555 timer
+    opAmpGain?: number; // For LM358 (open loop gain ~100000)
   };
 }
 

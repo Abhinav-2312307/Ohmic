@@ -35,6 +35,59 @@ class UnionFind {
   }
 }
 
+// Robust semiconductor pin matching helpers
+export const getDiodePins = (comp: CircuitComponent) => {
+  const anode = comp.pins.find((p) => {
+    const n = (p.name || '').toUpperCase();
+    const id = (p.id || '').toLowerCase();
+    return n.includes('ANODE') || n === 'A' || n === '+' || id === 'a' || id === 'pos' || id === 'l1' || id === 'd1' || id === 'p1';
+  });
+  const cathode = comp.pins.find((p) => {
+    const n = (p.name || '').toUpperCase();
+    const id = (p.id || '').toLowerCase();
+    return n.includes('CATHODE') || n === 'K' || n === '-' || id === 'k' || id === 'neg' || id === 'l2' || id === 'd2' || id === 'p2';
+  });
+  return { anode, cathode };
+};
+
+export const getBjtPins = (comp: CircuitComponent) => {
+  const pinC = comp.pins.find((p) => {
+    const n = (p.name || '').toUpperCase();
+    const id = (p.id || '').toLowerCase();
+    return n.includes('COLLECTOR') || n === 'C' || id === 'c' || id === 'p1';
+  });
+  const pinB = comp.pins.find((p) => {
+    const n = (p.name || '').toUpperCase();
+    const id = (p.id || '').toLowerCase();
+    return n.includes('BASE') || n === 'B' || id === 'b' || id === 'p2';
+  });
+  const pinE = comp.pins.find((p) => {
+    const n = (p.name || '').toUpperCase();
+    const id = (p.id || '').toLowerCase();
+    return n.includes('EMITTER') || n === 'E' || id === 'e' || id === 'p3';
+  });
+  return { pinC, pinB, pinE };
+};
+
+export const getMosfetPins = (comp: CircuitComponent) => {
+  const pinG = comp.pins.find((p) => {
+    const n = (p.name || '').toUpperCase();
+    const id = (p.id || '').toLowerCase();
+    return n.includes('GATE') || n === 'G' || id === 'g' || id === 'p1';
+  });
+  const pinD = comp.pins.find((p) => {
+    const n = (p.name || '').toUpperCase();
+    const id = (p.id || '').toLowerCase();
+    return n.includes('DRAIN') || n === 'D' || id === 'd' || id === 'p2';
+  });
+  const pinS = comp.pins.find((p) => {
+    const n = (p.name || '').toUpperCase();
+    const id = (p.id || '').toLowerCase();
+    return n.includes('SOURCE') || n === 'S' || id === 's' || id === 'p3';
+  });
+  return { pinG, pinD, pinS };
+};
+
 export function solveCircuit(
   components: CircuitComponent[],
   wires: JumperWire[],
@@ -83,6 +136,9 @@ export function solveCircuit(
         groundRoot = uf.find(negPin.connectedHoleId);
         break;
       }
+    } else if (comp.type === 'POWER_MODULE_MB102') {
+      groundRoot = uf.find('TOP_NEG_1') || uf.find('BUS_TOP_NEG');
+      break;
     }
   }
   if (!groundRoot) {
@@ -134,6 +190,33 @@ export function solveCircuit(
           componentId: comp.id,
         });
       }
+    } else if (comp.type === 'POWER_MODULE_MB102') {
+      const vOut = comp.state?.outputVoltageRail ?? (comp.value || 5.0);
+      const topPosRoot = uf.find('TOP_POS_1');
+      const topNegRoot = uf.find('TOP_NEG_1');
+      const botPosRoot = uf.find('BOT_POS_1');
+      const botNegRoot = uf.find('BOT_NEG_1');
+
+      const nodeTopPos = rootToNodeId.get(topPosRoot) ?? 0;
+      const nodeTopNeg = rootToNodeId.get(topNegRoot) ?? 0;
+      const nodeBotPos = rootToNodeId.get(botPosRoot) ?? 0;
+      const nodeBotNeg = rootToNodeId.get(botNegRoot) ?? 0;
+
+      vSources.push({
+        nodePos: nodeTopPos,
+        nodeNeg: nodeTopNeg,
+        voltage: vOut,
+        index: vSourceIdx++,
+        componentId: `${comp.id}_top`,
+      });
+
+      vSources.push({
+        nodePos: nodeBotPos,
+        nodeNeg: nodeBotNeg,
+        voltage: vOut,
+        index: vSourceIdx++,
+        componentId: `${comp.id}_bot`,
+      });
     }
   });
 
@@ -151,15 +234,18 @@ export function solveCircuit(
 
   // Multi-pass diode solver to determine which LEDs/Diodes are forward-conducting
   // Physical initial state is ALWAYS FALSE (non-conducting) so diodes never act as phantom energy sources
-  const ledStates = new Map<string, boolean>();
+  const diodeStates = new Map<string, boolean>();
   components.forEach((comp) => {
-    if (comp.type === 'LED' && comp.health !== 'BURNED_OUT') {
-      ledStates.set(comp.id, false); // initial guess: non-conducting
+    if (
+      (comp.type === 'LED' || comp.type === 'DIODE_1N4148' || comp.type === 'DIODE_1N4007') &&
+      comp.health !== 'BURNED_OUT'
+    ) {
+      diodeStates.set(comp.id, false); // initial guess: non-conducting
     }
   });
 
   let x: number[] = [];
-  const maxIterations = 3;
+  const maxIterations = 4;
 
   for (let iter = 0; iter < maxIterations; iter++) {
     // Linear system: A * x = z
@@ -211,15 +297,14 @@ export function solveCircuit(
           const n2 = rootToNodeId.get(uf.find(pin2.connectedHoleId)) ?? 0;
           stampConductance(nw, n2, 1 / (comp.value * (1 - ratio)));
         }
-      } else if (comp.type === 'LED') {
-        const anode = comp.pins.find((p) => p.name === 'ANODE' || p.id === 'l1' || p.id === 'pos');
-        const cathode = comp.pins.find((p) => p.name === 'CATHODE' || p.id === 'l2' || p.id === 'neg');
+      } else if (comp.type === 'LED' || comp.type === 'DIODE_1N4148' || comp.type === 'DIODE_1N4007') {
+        const { anode, cathode } = getDiodePins(comp);
         if (anode?.connectedHoleId && cathode?.connectedHoleId) {
           const nA = rootToNodeId.get(uf.find(anode.connectedHoleId)) ?? 0;
           const nK = rootToNodeId.get(uf.find(cathode.connectedHoleId)) ?? 0;
-          const vf = comp.forwardVoltage ?? 1.9;
-          const rd = 18;
-          const isForward = ledStates.get(comp.id) ?? true;
+          const vf = comp.type === 'DIODE_1N4148' ? 0.72 : comp.type === 'DIODE_1N4007' ? 0.70 : (comp.forwardVoltage ?? 1.9);
+          const rd = comp.type === 'DIODE_1N4007' ? 0.4 : comp.type === 'DIODE_1N4148' ? 6.0 : 18.0;
+          const isForward = diodeStates.get(comp.id) ?? false;
 
           if (isForward) {
             stampConductance(nA, nK, 1 / rd);
@@ -232,6 +317,214 @@ export function solveCircuit(
           } else {
             // Reverse-biased / below knee: high impedance
             stampConductance(nA, nK, 1 / 1e7);
+          }
+        }
+      } else if (comp.type === 'TRANSISTOR_NPN_BC547' || comp.type === 'TRANSISTOR_NPN_2N2222') {
+        // NPN BJT: Pin mapping (Collector, Base, Emitter)
+        const { pinC, pinB, pinE } = getBjtPins(comp);
+        if (pinC?.connectedHoleId && pinB?.connectedHoleId && pinE?.connectedHoleId) {
+          const nC = rootToNodeId.get(uf.find(pinC.connectedHoleId)) ?? 0;
+          const nB = rootToNodeId.get(uf.find(pinB.connectedHoleId)) ?? 0;
+          const nE = rootToNodeId.get(uf.find(pinE.connectedHoleId)) ?? 0;
+          const vB = nB === 0 ? 0 : x[nB - 1] || 0;
+          const vE = nE === 0 ? 0 : x[nE - 1] || 0;
+          const vC = nC === 0 ? 0 : x[nC - 1] || 0;
+          const vBE = vB - vE;
+          const beta = comp.hfe ?? (comp.type === 'TRANSISTOR_NPN_2N2222' ? 100 : 200);
+
+          if (vBE >= 0.60) {
+            // Base-Emitter forward conducts with 0.65V knee
+            const rBE = 45;
+            stampConductance(nB, nE, 1 / rBE);
+            const ieqB = 0.65 / rBE;
+            if (nB - 1 >= 0) z[nB - 1] += ieqB;
+            if (nE - 1 >= 0) z[nE - 1] -= ieqB;
+
+            // Collector-Emitter controlled channel
+            const iBase = Math.max(0, (vBE - 0.65) / rBE);
+            const vCE = Math.max(0.05, vC - vE);
+            const iTarget = Math.min(comp.type === 'TRANSISTOR_NPN_2N2222' ? 0.8 : 0.2, beta * iBase);
+            const gCE = Math.min(20.0, Math.max(0.001, iTarget / vCE));
+            stampConductance(nC, nE, gCE);
+          } else {
+            // Cutoff
+            stampConductance(nB, nE, 1 / 1e7);
+            stampConductance(nC, nE, 1 / 1e7);
+          }
+        }
+      } else if (comp.type === 'TRANSISTOR_PNP_BC557') {
+        // PNP BJT: Pin mapping (Collector, Base, Emitter)
+        const { pinC, pinB, pinE } = getBjtPins(comp);
+        if (pinC?.connectedHoleId && pinB?.connectedHoleId && pinE?.connectedHoleId) {
+          const nC = rootToNodeId.get(uf.find(pinC.connectedHoleId)) ?? 0;
+          const nB = rootToNodeId.get(uf.find(pinB.connectedHoleId)) ?? 0;
+          const nE = rootToNodeId.get(uf.find(pinE.connectedHoleId)) ?? 0;
+          const vB = nB === 0 ? 0 : x[nB - 1] || 0;
+          const vE = nE === 0 ? 0 : x[nE - 1] || 0;
+          const vC = nC === 0 ? 0 : x[nC - 1] || 0;
+          const vEB = vE - vB;
+          const beta = comp.hfe ?? 200;
+
+          if (vEB >= 0.60) {
+            // Emitter-Base forward conducts with 0.65V knee
+            const rEB = 45;
+            stampConductance(nE, nB, 1 / rEB);
+            const ieqB = 0.65 / rEB;
+            if (nE - 1 >= 0) z[nE - 1] += ieqB;
+            if (nB - 1 >= 0) z[nB - 1] -= ieqB;
+
+            // Emitter-Collector controlled channel
+            const iBase = Math.max(0, (vEB - 0.65) / rEB);
+            const vEC = Math.max(0.05, vE - vC);
+            const iTarget = Math.min(0.2, beta * iBase);
+            const gEC = Math.min(20.0, Math.max(0.001, iTarget / vEC));
+            stampConductance(nE, nC, gEC);
+          } else {
+            // Cutoff
+            stampConductance(nE, nB, 1 / 1e7);
+            stampConductance(nE, nC, 1 / 1e7);
+          }
+        }
+      } else if (comp.type === 'MOSFET_N_LOGIC') {
+        // N-channel logic MOSFET: Gate, Drain, Source
+        const { pinG, pinD, pinS } = getMosfetPins(comp);
+        if (pinG?.connectedHoleId && pinD?.connectedHoleId && pinS?.connectedHoleId) {
+          const nG = rootToNodeId.get(uf.find(pinG.connectedHoleId)) ?? 0;
+          const nD = rootToNodeId.get(uf.find(pinD.connectedHoleId)) ?? 0;
+          const nS = rootToNodeId.get(uf.find(pinS.connectedHoleId)) ?? 0;
+          const vG = nG === 0 ? 0 : x[nG - 1] || 0;
+          const vS = nS === 0 ? 0 : x[nS - 1] || 0;
+          const vGS = vG - vS;
+          const vth = comp.vth ?? 2.0;
+
+          // Gate is fully isolated
+          stampConductance(nG, nS, 1 / 1e9);
+
+          if (vGS >= vth) {
+            // Conductive channel: low Rds(on)
+            const rOn = comp.rdsOn ?? 0.05;
+            stampConductance(nD, nS, 1 / rOn);
+          } else {
+            // Cutoff
+            stampConductance(nD, nS, 1 / 1e7);
+          }
+        }
+      } else if (comp.type === 'LDR_PHOTORESISTOR') {
+        const pinA = comp.pins[0];
+        const pinB = comp.pins[1];
+        if (pinA?.connectedHoleId && pinB?.connectedHoleId) {
+          const n1 = rootToNodeId.get(uf.find(pinA.connectedHoleId)) ?? 0;
+          const n2 = rootToNodeId.get(uf.find(pinB.connectedHoleId)) ?? 0;
+          const light = Math.max(0, Math.min(1, comp.lightLevel ?? 0.5));
+          const rLDR = 100 + 100000 * ((1 - light) ** 2);
+          stampConductance(n1, n2, 1 / rLDR);
+        }
+      } else if (comp.type === 'DIP8_LM358') {
+        // LM358 Dual Op-Amp
+        // Pin 1: OUT1, Pin 2: IN1-, Pin 3: IN1+, Pin 4: GND
+        // Pin 5: IN2+, Pin 6: IN2-, Pin 7: OUT2, Pin 8: VCC
+        const pVCC = comp.pins.find((p) => p.name?.includes('VCC') || p.id === 'p8');
+        const pGND = comp.pins.find((p) => p.name?.includes('GND') || p.id === 'p4');
+        const nVCC = pVCC?.connectedHoleId ? (rootToNodeId.get(uf.find(pVCC.connectedHoleId)) ?? 0) : 0;
+        const nGND = pGND?.connectedHoleId ? (rootToNodeId.get(uf.find(pGND.connectedHoleId)) ?? 0) : 0;
+        const vcc = nVCC === 0 ? 0 : x[nVCC - 1] || 0;
+        const gnd = nGND === 0 ? 0 : x[nGND - 1] || 0;
+
+        if (vcc - gnd >= 2.5) {
+          // Op-Amp 1 (Pins 1, 2, 3)
+          const pOUT1 = comp.pins.find((p) => p.name?.includes('OUT1') || p.id === 'p1');
+          const pIN1M = comp.pins.find((p) => p.name?.includes('IN1-') || p.id === 'p2');
+          const pIN1P = comp.pins.find((p) => p.name?.includes('IN1+') || p.id === 'p3');
+          if (pOUT1?.connectedHoleId && pIN1M?.connectedHoleId && pIN1P?.connectedHoleId) {
+            const nO1 = rootToNodeId.get(uf.find(pOUT1.connectedHoleId)) ?? 0;
+            const nM1 = rootToNodeId.get(uf.find(pIN1M.connectedHoleId)) ?? 0;
+            const nP1 = rootToNodeId.get(uf.find(pIN1P.connectedHoleId)) ?? 0;
+            const vm1 = nM1 === 0 ? 0 : x[nM1 - 1] || 0;
+            const vp1 = nP1 === 0 ? 0 : x[nP1 - 1] || 0;
+            const vDiff = vp1 - vm1;
+            const vOutTarget = Math.max(gnd + 0.05, Math.min(vcc - 1.2, gnd + (vcc - gnd) / 2 + vDiff * 5000));
+            const rOut = 20;
+            stampConductance(nO1, nGND, 1 / rOut);
+            const ieq = vOutTarget / rOut;
+            if (nO1 - 1 >= 0) z[nO1 - 1] += ieq;
+            if (nGND - 1 >= 0) z[nGND - 1] -= ieq;
+          }
+
+          // Op-Amp 2 (Pins 5, 6, 7)
+          const pOUT2 = comp.pins.find((p) => p.name?.includes('OUT2') || p.id === 'p7');
+          const pIN2M = comp.pins.find((p) => p.name?.includes('IN2-') || p.id === 'p6');
+          const pIN2P = comp.pins.find((p) => p.name?.includes('IN2+') || p.id === 'p5');
+          if (pOUT2?.connectedHoleId && pIN2M?.connectedHoleId && pIN2P?.connectedHoleId) {
+            const nO2 = rootToNodeId.get(uf.find(pOUT2.connectedHoleId)) ?? 0;
+            const nM2 = rootToNodeId.get(uf.find(pIN2M.connectedHoleId)) ?? 0;
+            const nP2 = rootToNodeId.get(uf.find(pIN2P.connectedHoleId)) ?? 0;
+            const vm2 = nM2 === 0 ? 0 : x[nM2 - 1] || 0;
+            const vp2 = nP2 === 0 ? 0 : x[nP2 - 1] || 0;
+            const vDiff = vp2 - vm2;
+            const vOutTarget = Math.max(gnd + 0.05, Math.min(vcc - 1.2, gnd + (vcc - gnd) / 2 + vDiff * 5000));
+            const rOut = 20;
+            stampConductance(nO2, nGND, 1 / rOut);
+            const ieq = vOutTarget / rOut;
+            if (nO2 - 1 >= 0) z[nO2 - 1] += ieq;
+            if (nGND - 1 >= 0) z[nGND - 1] -= ieq;
+          }
+        }
+      } else if (comp.type === 'DIP8_555') {
+        // NE555 Timer IC
+        // Pin 1: GND, Pin 2: TRIG, Pin 3: OUT, Pin 4: RESET
+        // Pin 5: CTRL, Pin 6: THRES, Pin 7: DISCH, Pin 8: VCC
+        const pVCC = comp.pins.find((p) => p.id === 'p8' || p.name?.includes('VCC'));
+        const pGND = comp.pins.find((p) => p.id === 'p1' || p.name?.includes('GND'));
+        const nVCC = pVCC?.connectedHoleId ? (rootToNodeId.get(uf.find(pVCC.connectedHoleId)) ?? 0) : 0;
+        const nGND = pGND?.connectedHoleId ? (rootToNodeId.get(uf.find(pGND.connectedHoleId)) ?? 0) : 0;
+        const vcc = nVCC === 0 ? 0 : x[nVCC - 1] || 0;
+        const gnd = nGND === 0 ? 0 : x[nGND - 1] || 0;
+
+        // Stamp internal 3 x 5k divider string
+        const pCTRL = comp.pins.find((p) => p.id === 'p5' || p.name?.includes('CTRL'));
+        const nCTRL = pCTRL?.connectedHoleId ? (rootToNodeId.get(uf.find(pCTRL.connectedHoleId)) ?? 0) : 0;
+        if (nCTRL && nVCC && nGND) {
+          stampConductance(nVCC, nCTRL, 1 / 5000);
+          stampConductance(nCTRL, nGND, 1 / 10000);
+        }
+
+        if (vcc - gnd >= 3.0) {
+          const pOUT = comp.pins.find((p) => p.id === 'p3' || p.name?.includes('OUT'));
+          const pTRIG = comp.pins.find((p) => p.id === 'p2' || p.name?.includes('TRIG'));
+          const pTHRES = comp.pins.find((p) => p.id === 'p6' || p.name?.includes('THRES'));
+          const pDISCH = comp.pins.find((p) => p.id === 'p7' || p.name?.includes('DISCH'));
+
+          const nOUT = pOUT?.connectedHoleId ? (rootToNodeId.get(uf.find(pOUT.connectedHoleId)) ?? 0) : 0;
+          const nTRIG = pTRIG?.connectedHoleId ? (rootToNodeId.get(uf.find(pTRIG.connectedHoleId)) ?? 0) : 0;
+          const nTHRES = pTHRES?.connectedHoleId ? (rootToNodeId.get(uf.find(pTHRES.connectedHoleId)) ?? 0) : 0;
+          const nDISCH = pDISCH?.connectedHoleId ? (rootToNodeId.get(uf.find(pDISCH.connectedHoleId)) ?? 0) : 0;
+
+          const vTrig = nTRIG === 0 ? 0 : x[nTRIG - 1] || 0;
+          const vThres = nTHRES === 0 ? 0 : x[nTHRES - 1] || 0;
+
+          const vTrigRef = gnd + (vcc - gnd) / 3;
+          const vThresRef = gnd + (2 * (vcc - gnd)) / 3;
+
+          // Astable / Monostable trigger comparison
+          let isHigh = true;
+          if (vThres > vThresRef) {
+            isHigh = false;
+          } else if (vTrig < vTrigRef) {
+            isHigh = true;
+          }
+
+          if (nOUT) {
+            const vOutTarget = isHigh ? vcc - 1.4 : gnd + 0.1;
+            const rOut = 15;
+            stampConductance(nOUT, nGND, 1 / rOut);
+            const ieq = vOutTarget / rOut;
+            if (nOUT - 1 >= 0) z[nOUT - 1] += ieq;
+            if (nGND - 1 >= 0) z[nGND - 1] -= ieq;
+          }
+
+          if (nDISCH && !isHigh) {
+            // Pin 7 (Discharge) conducts to GND when output is low
+            stampConductance(nDISCH, nGND, 1 / 5);
           }
         }
       } else if (comp.type === 'BULB_INCANDESCENT') {
@@ -306,29 +599,39 @@ export function solveCircuit(
     // Check diode states against solution
     let stateChanged = false;
     components.forEach((comp) => {
-      if (comp.type === 'LED' && comp.health !== 'BURNED_OUT') {
-        const anode = comp.pins.find((p) => p.name === 'ANODE' || p.id === 'l1' || p.id === 'pos');
-        const cathode = comp.pins.find((p) => p.name === 'CATHODE' || p.id === 'l2' || p.id === 'neg');
+      if ((comp.type === 'LED' || comp.type === 'DIODE_1N4148' || comp.type === 'DIODE_1N4007') && comp.health !== 'BURNED_OUT') {
+        const { anode, cathode } = getDiodePins(comp);
         if (anode?.connectedHoleId && cathode?.connectedHoleId) {
           const nA = rootToNodeId.get(uf.find(anode.connectedHoleId)) ?? 0;
           const nK = rootToNodeId.get(uf.find(cathode.connectedHoleId)) ?? 0;
           const vA = nA === 0 ? 0 : x[nA - 1] || 0;
           const vK = nK === 0 ? 0 : x[nK - 1] || 0;
-          const vf = comp.forwardVoltage ?? 1.9;
+          const vf = comp.type === 'DIODE_1N4148' ? 0.72 : comp.type === 'DIODE_1N4007' ? 0.70 : (comp.forwardVoltage ?? 1.9);
           const vDiff = vA - vK;
-          const currentState = ledStates.get(comp.id) ?? true;
+          const currentState = diodeStates.get(comp.id) ?? false;
           if (currentState && vDiff < vf * 0.75) {
-            ledStates.set(comp.id, false);
+            diodeStates.set(comp.id, false);
             stateChanged = true;
           } else if (!currentState && vDiff >= vf * 0.85) {
-            ledStates.set(comp.id, true);
+            diodeStates.set(comp.id, true);
             stateChanged = true;
           }
         }
       }
     });
 
-    if (!stateChanged) break;
+    // Check if active nonlinear semiconductor devices are present
+    const hasActiveDevices = components.some(
+      (c) =>
+        c.type === 'TRANSISTOR_NPN_BC547' ||
+        c.type === 'TRANSISTOR_NPN_2N2222' ||
+        c.type === 'TRANSISTOR_PNP_BC557' ||
+        c.type === 'MOSFET_N_LOGIC' ||
+        c.type === 'DIP8_LM358' ||
+        c.type === 'DIP8_555'
+    );
+
+    if (!stateChanged && iter >= (hasActiveDevices ? 2 : 1)) break;
   }
 
   // Extract node voltages
@@ -392,32 +695,98 @@ export function solveCircuit(
         vDrop = Math.abs(v1 - v2);
         iCurrent = vDrop / Math.max(0.1, updated.value);
       }
-    } else if (updated.type === 'LED') {
-      const a = updated.pins.find((p) => p.name === 'ANODE' || p.id === 'l1' || p.id === 'pos')?.connectedHoleId;
-      const k = updated.pins.find((p) => p.name === 'CATHODE' || p.id === 'l2' || p.id === 'neg')?.connectedHoleId;
-      if (a && k) {
-        const va = holeVoltages.get(a) ?? 0;
-        const vk = holeVoltages.get(k) ?? 0;
+    } else if (updated.type === 'LED' || updated.type === 'DIODE_1N4148' || updated.type === 'DIODE_1N4007') {
+      const { anode, cathode } = getDiodePins(updated);
+      if (anode?.connectedHoleId && cathode?.connectedHoleId) {
+        const va = holeVoltages.get(anode.connectedHoleId) ?? 0;
+        const vk = holeVoltages.get(cathode.connectedHoleId) ?? 0;
         const forwardBias = va - vk;
-        const vf = updated.forwardVoltage ?? 1.9;
-        const isConducting = ledStates.get(updated.id) ?? false;
+        const vf = updated.type === 'DIODE_1N4148' ? 0.72 : updated.type === 'DIODE_1N4007' ? 0.70 : (updated.forwardVoltage ?? 1.9);
+        const rd = updated.type === 'DIODE_1N4007' ? 0.4 : updated.type === 'DIODE_1N4148' ? 6.0 : 18.0;
+        const isConducting = diodeStates.get(updated.id) ?? false;
 
-        if (isConducting && forwardBias >= vf * 0.8) {
+        if (isConducting && forwardBias >= vf * 0.75) {
           vDrop = Math.max(0, forwardBias);
-          iCurrent = Math.max(0, (forwardBias - vf) / 18);
-          // If forward bias is near threshold, allow a smooth emission threshold
-          if (forwardBias >= vf * 0.95 && iCurrent < 0.002) {
-            iCurrent = Math.max(0.002, (forwardBias - vf * 0.9) / 25);
+          iCurrent = Math.max(0.001, (forwardBias - vf * 0.98) / rd);
+          if (updated.type === 'LED') {
+            if (forwardBias >= vf * 0.95 && iCurrent < 0.002) {
+              iCurrent = Math.max(0.002, (forwardBias - vf * 0.9) / 25);
+            }
+            updated.isEmitting = iCurrent > 0.0005;
+            updated.emissionIntensity = Math.min(2.5, Math.max(0.2, (iCurrent / 0.015) ** 0.85));
           }
-          updated.isEmitting = iCurrent > 0.0005;
-          updated.emissionIntensity = Math.min(2.5, Math.max(0.2, (iCurrent / 0.015) ** 0.85));
         } else {
           vDrop = Math.max(0, forwardBias);
           iCurrent = 0;
-          updated.isEmitting = false;
-          updated.emissionIntensity = 0;
+          if (updated.type === 'LED') {
+            updated.isEmitting = false;
+            updated.emissionIntensity = 0;
+          }
         }
       }
+    } else if (updated.type === 'TRANSISTOR_NPN_BC547' || updated.type === 'TRANSISTOR_NPN_2N2222' || updated.type === 'TRANSISTOR_PNP_BC557') {
+      const { pinC, pinB, pinE } = getBjtPins(updated);
+      if (pinC?.connectedHoleId && pinB?.connectedHoleId && pinE?.connectedHoleId) {
+        const vC = getNodeVoltage(pinC.connectedHoleId);
+        const vB = getNodeVoltage(pinB.connectedHoleId);
+        const vE = getNodeVoltage(pinE.connectedHoleId);
+        vDrop = Math.abs(vC - vE);
+        const isNPN = updated.type !== 'TRANSISTOR_PNP_BC557';
+        const vBE = isNPN ? vB - vE : vE - vB;
+        if (vBE >= 0.60) {
+          const rSat = 4; // Typical BC547 / 2N2222 Vce(sat) internal bulk resistance (~4Ω)
+          const iBase = Math.max(0, (vBE - 0.65) / 45);
+          const beta = updated.hfe ?? 200;
+          const iMax = isNPN && updated.type === 'TRANSISTOR_NPN_2N2222' ? 0.8 : 0.2;
+          iCurrent = Math.min(iMax, Math.min(beta * iBase, Math.max(0.001, vDrop / rSat)));
+        } else {
+          iCurrent = 0;
+        }
+      }
+    } else if (updated.type === 'MOSFET_N_LOGIC') {
+      const { pinG, pinD, pinS } = getMosfetPins(updated);
+      if (pinD?.connectedHoleId && pinS?.connectedHoleId && pinG?.connectedHoleId) {
+        const vD = getNodeVoltage(pinD.connectedHoleId);
+        const vS = getNodeVoltage(pinS.connectedHoleId);
+        const vG = getNodeVoltage(pinG.connectedHoleId);
+        vDrop = Math.abs(vD - vS);
+        const vGS = vG - vS;
+        const vth = updated.vth ?? 2.0;
+        if (vGS >= vth) {
+          const rOn = updated.rdsOn ?? 0.05;
+          iCurrent = vDrop / rOn;
+        } else {
+          iCurrent = 0;
+        }
+      }
+    } else if (updated.type === 'LDR_PHOTORESISTOR') {
+      const p1 = updated.pins[0]?.connectedHoleId;
+      const p2 = updated.pins[1]?.connectedHoleId;
+      if (p1 && p2) {
+        const v1 = getNodeVoltage(p1);
+        const v2 = getNodeVoltage(p2);
+        vDrop = Math.abs(v1 - v2);
+        const light = Math.max(0, Math.min(1, updated.lightLevel ?? 0.5));
+        const rLDR = 100 + 100000 * ((1 - light) ** 2);
+        iCurrent = vDrop / rLDR;
+      }
+    } else if (updated.type === 'DIP8_LM358') {
+      const pO1 = updated.pins.find((p) => p.name?.includes('OUT1') || p.id === 'p1')?.connectedHoleId;
+      const pGND = updated.pins.find((p) => p.name?.includes('GND') || p.id === 'p4')?.connectedHoleId;
+      if (pO1 && pGND) {
+        vDrop = Math.abs(getNodeVoltage(pO1) - getNodeVoltage(pGND));
+        iCurrent = vDrop / 50;
+      }
+    } else if (updated.type === 'DIP8_555') {
+      const pO = updated.pins.find((p) => p.name?.includes('OUT') || p.id === 'p3')?.connectedHoleId;
+      const pG = updated.pins.find((p) => p.name?.includes('GND') || p.id === 'p1')?.connectedHoleId;
+      if (pO && pG) {
+        vDrop = Math.abs(getNodeVoltage(pO) - getNodeVoltage(pG));
+        iCurrent = vDrop / 30;
+      }
+    } else if (updated.type === 'POWER_MODULE_MB102') {
+      vDrop = updated.state?.outputVoltageRail ?? (updated.value || 5.0);
+      iCurrent = 0.05; // quiescent operating current
     } else if (updated.type === 'POTENTIOMETER') {
       const pin1 = updated.pins[0]?.connectedHoleId;
       const pinW = updated.pins[1]?.connectedHoleId;

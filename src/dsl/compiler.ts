@@ -271,6 +271,130 @@ function getComponentBlueprint(
           })),
       };
 
+    case 'diode': {
+      const model = (primaryValue || '').toLowerCase();
+      const is1N4007 = model.includes('4007') || optMap.has('4007') || optMap.has('rectifier');
+      return {
+        type: is1N4007 ? 'DIODE_1N4007' : 'DIODE_1N4148',
+        name: is1N4007 ? '1N4007 Rectifier Diode' : '1N4148 High-Speed Signal Diode',
+        modelUrl: '',
+        unit: 'V',
+        defaultValue: is1N4007 ? 0.70 : 0.72,
+        pinTemplate: (holeIds) => [
+          { id: 'a', name: 'Anode (+)', relativePos: [-0.00381, 0, 0], connectedHoleId: holeIds[0] },
+          { id: 'k', name: 'Cathode (-)', relativePos: [0.00381, 0, 0], connectedHoleId: holeIds[1] },
+        ],
+        extraDefaults: { diodeThreshold: is1N4007 ? 0.70 : 0.72 },
+      };
+    }
+
+    case 'npn': {
+      const model = (primaryValue || '').toLowerCase();
+      const is2N2222 = model.includes('2222') || optMap.has('2n2222');
+      const hfe = optMap.has('hfe') ? parseElectricalValue(optMap.get('hfe')!).value : (is2N2222 ? 150 : 250);
+      return {
+        type: is2N2222 ? 'TRANSISTOR_NPN_2N2222' : 'TRANSISTOR_NPN_BC547',
+        name: is2N2222 ? '2N2222 NPN BJT' : 'BC547 NPN BJT',
+        modelUrl: '',
+        unit: 'hFE',
+        defaultValue: hfe,
+        pinTemplate: (holeIds) => [
+          { id: 'c', name: 'Collector (C)', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+          { id: 'b', name: 'Base (B)', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+          { id: 'e', name: 'Emitter (E)', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+        ],
+        extraDefaults: { hfe },
+      };
+    }
+
+    case 'pnp': {
+      const hfe = optMap.has('hfe') ? parseElectricalValue(optMap.get('hfe')!).value : 220;
+      return {
+        type: 'TRANSISTOR_PNP_BC557',
+        name: 'BC557 PNP BJT',
+        modelUrl: '',
+        unit: 'hFE',
+        defaultValue: hfe,
+        pinTemplate: (holeIds) => [
+          { id: 'c', name: 'Collector (C)', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+          { id: 'b', name: 'Base (B)', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+          { id: 'e', name: 'Emitter (E)', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+        ],
+        extraDefaults: { hfe },
+      };
+    }
+
+    case 'mosfet': {
+      const vth = optMap.has('vth') ? parseElectricalValue(optMap.get('vth')!).value : 2.0;
+      const rds = optMap.has('rdson') ? parseElectricalValue(optMap.get('rdson')!).value : 0.05;
+      return {
+        type: 'MOSFET_N_LOGIC',
+        name: 'Logic-Level N-MOSFET (IRLZ44N)',
+        modelUrl: '',
+        unit: 'A',
+        defaultValue: 30,
+        pinTemplate: (holeIds) => [
+          { id: 'g', name: 'Gate (G)', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+          { id: 'd', name: 'Drain (D)', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+          { id: 's', name: 'Source (S)', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+        ],
+        extraDefaults: { vth, rdsOn: rds },
+      };
+    }
+
+    case 'ldr': {
+      const light = optMap.has('light') ? parseFloat(optMap.get('light')!) : 0.5;
+      return {
+        type: 'LDR_PHOTORESISTOR',
+        name: 'CdS Photoresistor LDR',
+        modelUrl: '',
+        unit: 'lux',
+        defaultValue: 500,
+        pinTemplate: (holeIds) => [
+          { id: 'p1', name: 'Pin 1', relativePos: [-0.00127, 0, 0], connectedHoleId: holeIds[0] },
+          { id: 'p2', name: 'Pin 2', relativePos: [0.00127, 0, 0], connectedHoleId: holeIds[1] },
+        ],
+        extraDefaults: { lightLevel: light },
+      };
+    }
+
+    case 'lm358': {
+      return {
+        type: 'DIP8_LM358',
+        name: 'LM358 Dual Op-Amp',
+        modelUrl: '/models/components/dip8_ic.glb',
+        unit: 'IC',
+        defaultValue: 358,
+        pinTemplate: (holeIds) => [
+          { id: 'p1', name: 'OUT1 (1)', relativePos: [-0.00381, -0.00381, 0], connectedHoleId: holeIds[0] },
+          { id: 'p2', name: 'IN1- (2)', relativePos: [-0.00127, -0.00381, 0], connectedHoleId: holeIds[1] },
+          { id: 'p3', name: 'IN1+ (3)', relativePos: [0.00127, -0.00381, 0], connectedHoleId: holeIds[2] },
+          { id: 'p4', name: 'GND (4)', relativePos: [0.00381, -0.00381, 0], connectedHoleId: holeIds[3] },
+          { id: 'p5', name: 'IN2+ (5)', relativePos: [-0.00381, 0.00381, 0], connectedHoleId: holeIds[4] },
+          { id: 'p6', name: 'IN2- (6)', relativePos: [-0.00127, 0.00381, 0], connectedHoleId: holeIds[5] },
+          { id: 'p7', name: 'OUT2 (7)', relativePos: [0.00127, 0.00381, 0], connectedHoleId: holeIds[6] },
+          { id: 'p8', name: 'VCC (8)', relativePos: [0.00381, 0.00381, 0], connectedHoleId: holeIds[7] },
+        ],
+      };
+    }
+
+    case 'mb102': {
+      const v = parseElectricalValue(primaryValue);
+      return {
+        type: 'POWER_MODULE_MB102',
+        name: 'MB102 Power Supply Module',
+        modelUrl: '',
+        unit: 'V',
+        defaultValue: v.value || 5.0,
+        pinTemplate: (holeIds) => [
+          { id: 'vcc_top', name: 'Top VCC (+)', relativePos: [0, -0.016, 0], connectedHoleId: holeIds[0] || 'TOP_POS_1' },
+          { id: 'gnd_top', name: 'Top GND (-)', relativePos: [0, -0.0135, 0], connectedHoleId: holeIds[1] || 'TOP_NEG_1' },
+          { id: 'vcc_bot', name: 'Bot VCC (+)', relativePos: [0, 0.0135, 0], connectedHoleId: holeIds[2] || 'BOT_POS_1' },
+          { id: 'gnd_bot', name: 'Bot GND (-)', relativePos: [0, 0.016, 0], connectedHoleId: holeIds[3] || 'BOT_NEG_1' },
+        ],
+      };
+    }
+
     default:
       return {
         type: 'RESISTOR',
@@ -427,7 +551,12 @@ export function compile(ast: OhmScriptAST): CompiledCircuit {
       const parsed = parsePlacementLocation(placement.location);
 
       if (parsed.mode === 'bench') {
-        if (blueprint.type === 'SPEAKER') {
+        if (blueprint.type === 'POWER_MODULE_MB102') {
+          // MB102 power supply module plugged directly into rails on breadboard left
+          position = [-0.082, 0.006, 0.008];
+          holeIds = ['TOP_POS_1', 'TOP_NEG_1', 'BOT_POS_1', 'BOT_NEG_1'];
+          pinConnections = blueprint.pinTemplate(holeIds);
+        } else if (blueprint.type === 'SPEAKER') {
           // Speaker on bench mat outside breadboard (right side)
           position = [0.065, 0.052, 0.0];
           pinConnections = [
@@ -474,7 +603,7 @@ export function compile(ast: OhmScriptAST): CompiledCircuit {
       }
     } else {
       // No placement — warn
-      if (blueprint.type !== 'BATTERY_9V' && blueprint.type !== 'DC_SOURCE') {
+      if (blueprint.type !== 'BATTERY_9V' && blueprint.type !== 'DC_SOURCE' && blueprint.type !== 'POWER_MODULE_MB102') {
         diagnostics.push({
           severity: 'warning',
           message: `Component '${compNode.id}' has no placement. Use 'place ${compNode.id} <location>'`,
@@ -482,7 +611,13 @@ export function compile(ast: OhmScriptAST): CompiledCircuit {
           col: compNode.loc.col,
         });
       }
-      pinConnections = blueprint.pinTemplate([]);
+      if (blueprint.type === 'POWER_MODULE_MB102') {
+        position = [-0.082, 0.006, 0.008];
+        holeIds = ['TOP_POS_1', 'TOP_NEG_1', 'BOT_POS_1', 'BOT_NEG_1'];
+        pinConnections = blueprint.pinTemplate(holeIds);
+      } else {
+        pinConnections = blueprint.pinTemplate([]);
+      }
     }
 
     const comp: CircuitComponent = {

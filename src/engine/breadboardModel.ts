@@ -239,14 +239,24 @@ export function getComponentDefaultElevation(type: string): number {
       return 0.0; // Rests on ESD bench mat
     case 'IC_555':
     case 'DIP8_555':
+    case 'DIP8_LM358':
       return 0.0055; // DIP-8 pins penetrate 3mm into socket, body sits on surface
+    case 'POWER_MODULE_MB102':
+      return 0.0075; // Sits elevated over breadboard rails
     case 'SWITCH_TACTILE':
     case 'SWITCH_TOGGLE':
     case 'BULB_INCANDESCENT':
     case 'DISPLAY_7SEG':
       return 0.0065; // Base sits on breadboard, pins penetrate 2.5mm
     case 'LED':
-      return 0.0068; // Anode/Cathode leads penetrate 3.2mm - 4.7mm into sockets
+    case 'DIODE_1N4148':
+    case 'DIODE_1N4007':
+    case 'TRANSISTOR_NPN_BC547':
+    case 'TRANSISTOR_PNP_BC557':
+    case 'TRANSISTOR_NPN_2N2222':
+    case 'MOSFET_N_LOGIC':
+    case 'LDR_PHOTORESISTOR':
+      return 0.0068; // Leads penetrate into sockets
     case 'RESISTOR':
     case 'CAPACITOR_ELECTROLYTIC':
     case 'CAPACITOR_CERAMIC':
@@ -369,7 +379,8 @@ export function getComponentFootprint(
     }
 
     case 'DIP8_555':
-    case 'IC_555': {
+    case 'IC_555':
+    case 'DIP8_LM358': {
       // DIP-8 straddles the central trough across Row E and Row F
       const col = Math.min(60, Math.max(1, currentCol));
       const holeIds = [
@@ -383,6 +394,73 @@ export function getComponentFootprint(
         `F${col + 3}`,
       ];
       return { holeIds, isValid: true };
+    }
+
+    case 'DIODE_1N4148':
+    case 'DIODE_1N4007': {
+      // 3 or 4 holes span (axial package)
+      if (isHorizontal) {
+        const targetCol = currentCol + 3 <= 63 ? currentCol + 3 : currentCol - 3;
+        const targetId = `${startHole.row}${targetCol}`;
+        if (BREADBOARD_HOLES.has(targetId)) {
+          return { holeIds: [startHoleId, targetId], isValid: true };
+        }
+      } else {
+        const isUpper = currentRowIdx <= 4;
+        const targetRowIdx = isUpper
+          ? (currentRowIdx + 2 <= 4 ? currentRowIdx + 2 : currentRowIdx - 2)
+          : (currentRowIdx + 2 <= 9 ? currentRowIdx + 2 : currentRowIdx - 2);
+        const targetId = `${rowOrder[targetRowIdx]}${currentCol}`;
+        if (BREADBOARD_HOLES.has(targetId)) {
+          return { holeIds: [startHoleId, targetId], isValid: true };
+        }
+      }
+      break;
+    }
+
+    case 'TRANSISTOR_NPN_BC547':
+    case 'TRANSISTOR_PNP_BC557':
+    case 'TRANSISTOR_NPN_2N2222':
+    case 'MOSFET_N_LOGIC': {
+      // TO-92 3-pin inline package: 3 adjacent holes
+      if (isHorizontal) {
+        const c1 = currentCol;
+        const c2 = currentCol + 1 <= 63 ? currentCol + 1 : currentCol - 1;
+        const c3 = currentCol + 2 <= 63 ? currentCol + 2 : currentCol - 2;
+        const id2 = `${startHole.row}${c2}`;
+        const id3 = `${startHole.row}${c3}`;
+        if (BREADBOARD_HOLES.has(id2) && BREADBOARD_HOLES.has(id3)) {
+          return { holeIds: [startHoleId, id2, id3], isValid: true };
+        }
+      } else {
+        const r1 = currentRowIdx;
+        const r2 = r1 + 1 <= 9 ? r1 + 1 : r1 - 1;
+        const r3 = r1 + 2 <= 9 ? r1 + 2 : r1 - 2;
+        const id2 = `${rowOrder[r2]}${currentCol}`;
+        const id3 = `${rowOrder[r3]}${currentCol}`;
+        if (BREADBOARD_HOLES.has(id2) && BREADBOARD_HOLES.has(id3)) {
+          return { holeIds: [startHoleId, id2, id3], isValid: true };
+        }
+      }
+      break;
+    }
+
+    case 'LDR_PHOTORESISTOR': {
+      // 2-pin radial sensor
+      const targetCol = currentCol + 1 <= 63 ? currentCol + 1 : currentCol - 1;
+      const targetId = `${startHole.row}${targetCol}`;
+      if (BREADBOARD_HOLES.has(targetId)) {
+        return { holeIds: [startHoleId, targetId], isValid: true };
+      }
+      break;
+    }
+
+    case 'POWER_MODULE_MB102': {
+      // Plugs into power rails at the left edge of the breadboard
+      return {
+        holeIds: ['TOP_POS_1', 'TOP_NEG_1', 'BOT_POS_1', 'BOT_NEG_1'],
+        isValid: true,
+      };
     }
 
     case 'DISPLAY_7SEG': {

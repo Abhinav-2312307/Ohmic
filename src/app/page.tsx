@@ -531,6 +531,100 @@ export default function OhmicWorkbenchPage() {
           }));
           break;
 
+        case 'DIODE_1N4148':
+          name = '1N4148 Signal Diode';
+          unit = 'Vf';
+          pins = [
+            { id: 'd1', name: 'ANODE (+)', relativePos: [-0.00381, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'd2', name: 'CATHODE (-)', relativePos: [0.00381, 0, 0], connectedHoleId: holeIds[1] },
+          ];
+          break;
+
+        case 'DIODE_1N4007':
+          name = '1N4007 Rectifier Diode';
+          unit = 'Vf';
+          pins = [
+            { id: 'd1', name: 'ANODE (+)', relativePos: [-0.00381, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'd2', name: 'CATHODE (-)', relativePos: [0.00381, 0, 0], connectedHoleId: holeIds[1] },
+          ];
+          break;
+
+        case 'TRANSISTOR_NPN_BC547':
+          name = 'BC547 NPN Transistor';
+          unit = 'hFE';
+          pins = [
+            { id: 'c', name: 'COLLECTOR', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'b', name: 'BASE', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'e', name: 'EMITTER', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ];
+          break;
+
+        case 'TRANSISTOR_PNP_BC557':
+          name = 'BC557 PNP Transistor';
+          unit = 'hFE';
+          pins = [
+            { id: 'c', name: 'COLLECTOR', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'b', name: 'BASE', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'e', name: 'EMITTER', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ];
+          break;
+
+        case 'TRANSISTOR_NPN_2N2222':
+          name = '2N2222 NPN Transistor';
+          unit = 'hFE';
+          pins = [
+            { id: 'e', name: 'EMITTER', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'b', name: 'BASE', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'c', name: 'COLLECTOR', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ];
+          break;
+
+        case 'MOSFET_N_LOGIC':
+          name = 'Logic-Level N-MOSFET';
+          unit = 'Vth';
+          pins = [
+            { id: 'g', name: 'GATE', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'd', name: 'DRAIN', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 's', name: 'SOURCE', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ];
+          break;
+
+        case 'LDR_PHOTORESISTOR':
+          name = 'CdS LDR Photoresistor';
+          unit = 'Ω';
+          pins = [
+            { id: 'p1', name: 'Pin 1', relativePos: [-0.00127, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'p2', name: 'Pin 2', relativePos: [0.00127, 0, 0], connectedHoleId: holeIds[1] },
+          ];
+          break;
+
+        case 'DIP8_LM358':
+          name = 'LM358 Dual Op-Amp';
+          modelUrl = '/models/components/dip8_ic.glb';
+          unit = 'IC';
+          pins = [
+            { id: 'p1', name: 'OUT1 (1)', relativePos: [-0.00381, -0.00381, 0], connectedHoleId: holeIds[0] },
+            { id: 'p2', name: 'IN1- (2)', relativePos: [-0.00127, -0.00381, 0], connectedHoleId: holeIds[1] },
+            { id: 'p3', name: 'IN1+ (3)', relativePos: [0.00127, -0.00381, 0], connectedHoleId: holeIds[2] },
+            { id: 'p4', name: 'GND (4)', relativePos: [0.00381, -0.00381, 0], connectedHoleId: holeIds[3] },
+            { id: 'p5', name: 'IN2+ (5)', relativePos: [-0.00381, 0.00381, 0], connectedHoleId: holeIds[4] },
+            { id: 'p6', name: 'IN2- (6)', relativePos: [-0.00127, 0.00381, 0], connectedHoleId: holeIds[5] },
+            { id: 'p7', name: 'OUT2 (7)', relativePos: [0.00127, 0.00381, 0], connectedHoleId: holeIds[6] },
+            { id: 'p8', name: 'VCC (8)', relativePos: [0.00381, 0.00381, 0], connectedHoleId: holeIds[7] },
+          ];
+          break;
+
+        case 'POWER_MODULE_MB102':
+          name = 'MB102 Power Supply Module';
+          unit = 'V';
+          pins = [
+            { id: 'top_pos', name: 'Top VCC (+)', relativePos: [0, 0.03, 0], connectedHoleId: 'TOP_POS_1' },
+            { id: 'top_neg', name: 'Top GND (-)', relativePos: [0, 0.025, 0], connectedHoleId: 'TOP_NEG_1' },
+            { id: 'bot_pos', name: 'Bot VCC (+)', relativePos: [0, -0.025, 0], connectedHoleId: 'BOT_POS_1' },
+            { id: 'bot_neg', name: 'Bot GND (-)', relativePos: [0, -0.03, 0], connectedHoleId: 'BOT_NEG_1' },
+          ];
+          break;
+
         default:
           name = `${type}`;
           unit = '';
