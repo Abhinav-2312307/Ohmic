@@ -17,6 +17,7 @@ import {
   SlidersHorizontal,
   ChevronDown,
   Keyboard,
+  Code2,
 } from 'lucide-react';
 import { getPresetCircuits, PresetCircuit } from '../presets/sampleCircuits';
 
@@ -44,6 +45,8 @@ interface TopToolbarProps {
   isDrawerOpen: boolean;
   onToggleDrawer: () => void;
   onOpenControlsGuide?: () => void;
+  isDevModeOpen?: boolean;
+  onToggleDevMode?: () => void;
 }
 
 export const WIRE_COLORS = [
@@ -77,6 +80,8 @@ export default function TopToolbar({
   isDrawerOpen,
   onToggleDrawer,
   onOpenControlsGuide,
+  isDevModeOpen,
+  onToggleDevMode,
 }: TopToolbarProps) {
   const presets = getPresetCircuits();
 
@@ -243,6 +248,22 @@ export default function TopToolbar({
           >
             <Keyboard className="w-3.5 h-3.5 text-amber-400" />
             <span>CONTROLS</span>
+          </button>
+        )}
+
+        {/* OhmScript Dev Mode Button */}
+        {onToggleDevMode && (
+          <button
+            onClick={onToggleDevMode}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-all ml-1 ${
+              isDevModeOpen
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shadow-lg shadow-cyan-500/15'
+                : 'text-zinc-300 hover:text-cyan-300 hover:bg-zinc-800/80 border border-white/[0.06]'
+            }`}
+            title="Toggle OhmScript Code Editor / Dev Mode (C)"
+          >
+            <Code2 className="w-3.5 h-3.5 text-cyan-400" />
+            <span>OHMSCRIPT</span>
           </button>
         )}
       </div>

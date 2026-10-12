@@ -7,6 +7,8 @@ import ComponentDrawer from '../components/ComponentDrawer';
 import PropertyInspector from '../components/PropertyInspector';
 import MultimeterPanel from '../components/MultimeterPanel';
 import OscilloscopePanel from '../components/OscilloscopePanel';
+import CodeEditor from '../components/CodeEditor';
+import { CompiledCircuit } from '../dsl';
 
 const CircuitWorkbench3D = dynamic(() => import('../components/CircuitWorkbench3D'), {
   ssr: false,
@@ -62,6 +64,7 @@ export default function OhmicWorkbenchPage() {
   const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isControlsGuideOpen, setIsControlsGuideOpen] = useState(false);
+  const [isDevModeOpen, setIsDevModeOpen] = useState(false);
 
   // Virtual Instruments State
   const [activeProbe, setActiveProbe] = useState<'RED' | 'BLACK' | null>(null);
@@ -220,7 +223,7 @@ export default function OhmicWorkbenchPage() {
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
       if (e.code === 'Space') {
         e.preventDefault();
@@ -273,6 +276,8 @@ export default function OhmicWorkbenchPage() {
         setPlacingComponent(null);
       } else if (e.key === 'c' || e.key === 'C') {
         setIsDrawerOpen((prev) => !prev);
+      } else if (e.key === '`' || e.key === '~' || ((e.key === 'e' || e.key === 'E') && !selectedComponentId)) {
+        setIsDevModeOpen((prev) => !prev);
       } else if (e.key === 'm' || e.key === 'M') {
         audioEngine.playKnobClick();
         setInstrumentTab((prev) => (prev === 'DMM' ? 'NONE' : 'DMM'));
@@ -299,6 +304,7 @@ export default function OhmicWorkbenchPage() {
         setSelectedWireId(null);
         setActiveProbe(null);
         setIsControlsGuideOpen(false);
+        setIsDevModeOpen(false);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         handleDeleteSelected();
       }
@@ -574,6 +580,33 @@ export default function OhmicWorkbenchPage() {
     setSelectedWireId(null);
   }, [applyCircuitUpdate]);
 
+  // Apply OhmScript Compiled Circuit Handler
+  const handleApplyCompiledCircuit = useCallback(
+    (compiled: CompiledCircuit) => {
+      setActivePresetId('');
+      setAmbientTemperature(compiled.ambientTemperature);
+      setIsSimulating(compiled.simulationEnabled);
+
+      if (compiled.multimeterConfig) {
+        setMultimeter((prev) => ({
+          ...prev,
+          mode: (compiled.multimeterConfig?.mode as MultimeterState['mode']) || prev.mode,
+          redProbeHoleId: compiled.multimeterConfig?.redProbeHoleId,
+          blackProbeHoleId: compiled.multimeterConfig?.blackProbeHoleId,
+        }));
+        if (compiled.multimeterConfig.redProbeHoleId || compiled.multimeterConfig.blackProbeHoleId) {
+          setInstrumentTab('DMM');
+        }
+      }
+
+      applyCircuitUpdate(compiled.components, compiled.wires);
+      setSelectedComponentId(null);
+      setSelectedWireId(null);
+      audioEngine.playPopSound();
+    },
+    [applyCircuitUpdate]
+  );
+
   // Deep-link preset loading via URL query parameter (e.g. ?preset=pot_lamp, ?preset=3, ?preset=burnout)
   const hasLoadedUrlPreset = useRef(false);
   useEffect(() => {
@@ -647,6 +680,8 @@ export default function OhmicWorkbenchPage() {
         isDrawerOpen={isDrawerOpen}
         onToggleDrawer={() => setIsDrawerOpen(!isDrawerOpen)}
         onOpenControlsGuide={() => setIsControlsGuideOpen(true)}
+        isDevModeOpen={isDevModeOpen}
+        onToggleDevMode={() => setIsDevModeOpen(!isDevModeOpen)}
       />
 
       {/* Main Full-Screen 3D Workspace */}
@@ -813,6 +848,17 @@ export default function OhmicWorkbenchPage() {
             />
           )}
         </div>
+
+        {/* OhmScript Domain-Specific Language Dev Mode Panel */}
+        <CodeEditor
+          isOpen={isDevModeOpen}
+          onClose={() => setIsDevModeOpen(false)}
+          components={components}
+          wires={wires}
+          onApplyCompiledCircuit={handleApplyCompiledCircuit}
+          ambientTemperature={ambientTemperature}
+          isSimulating={isSimulating}
+        />
       </main>
 
       {/* Interactive Controls & Shortcuts Guide Modal */}

@@ -211,6 +211,12 @@ const CONTROL_CATEGORIES: ControlCategory[] = [
         description: 'Browse resistors, capacitors, LEDs, potentiometers, tactile buttons, bulbs, and ICs.',
       },
       {
+        task: 'OhmScript Dev Mode / Code Editor',
+        keys: ['`', 'E'],
+        description: 'Open the text-based circuit description language editor to code, compile, and reverse-compile circuits.',
+        tip: 'Compile with ⌘+Enter, load starter circuit templates, and export/import .ohm or .json.',
+      },
+      {
         task: 'Delete Selected Item',
         keys: ['Delete', 'Backspace'],
         description: 'Permanently removes the selected component or wire from the circuit.',
