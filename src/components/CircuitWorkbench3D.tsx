@@ -719,14 +719,84 @@ export default function CircuitWorkbench3D({
           } else if (comp.type === 'BULB_INCANDESCENT') {
             const isEmitting = (comp as any).isEmitting ?? false;
             const emissionIntensity = (comp as any).emissionIntensity ?? 0;
-            if (isEmitting) {
-              mat.color.setHex(0xfef08a);
-              mat.emissive.setHex(0xf59e0b);
-              mat.emissiveIntensity = Math.min(2.5, emissionIntensity * 1.8);
-            } else {
-              mat.color.setHex(0x52525b);
+            const mName = (mat.name || '').toLowerCase();
+            const meshName = (mesh.name || '').toLowerCase();
+
+            if (mName.includes('filament') || meshName.includes('filament') || meshName.includes('tungsten')) {
+              // Internal coiled tungsten filament
+              if (isEmitting) {
+                // Incandescent radiant filament: brilliant white-hot core with intense amber bloom
+                mat.color.setHex(0xffffff);
+                mat.emissive.setHex(0xffaa22);
+                mat.emissiveIntensity = Math.min(6.5, Math.max(0.8, emissionIntensity * 4.2));
+                mat.roughness = 0.1;
+              } else {
+                // Cold tungsten wire: dark graphite grey
+                mat.color.setHex(0x27272a);
+                mat.emissive.setHex(0x000000);
+                mat.emissiveIntensity = 0;
+                mat.roughness = 0.45;
+              }
+            } else if (
+              mName.includes('glass') ||
+              meshName.includes('glass') ||
+              meshName.includes('dome') ||
+              meshName.includes('sphere.001') ||
+              meshName.includes('neck')
+            ) {
+              // Crystal clear glass envelope
+              const physicalMat = mat as THREE.MeshPhysicalMaterial;
+              if (isEmitting) {
+                // Radiant amber incandescent glow
+                mat.color.setHex(0xffedd5);
+                mat.emissive.setHex(0xff9900);
+                mat.emissiveIntensity = Math.min(2.2, Math.max(0.15, emissionIntensity * 1.3));
+                mat.transparent = true;
+                mat.opacity = 0.85;
+                if (physicalMat.transmission !== undefined) physicalMat.transmission = 0.82;
+                mat.roughness = 0.12;
+              } else {
+                // Clear, transparent glass envelope showing filament inside
+                mat.color.setHex(0xf8fafc);
+                mat.emissive.setHex(0x000000);
+                mat.emissiveIntensity = 0;
+                mat.transparent = true;
+                mat.opacity = 0.35;
+                if (physicalMat.transmission !== undefined) physicalMat.transmission = 0.95;
+                mat.roughness = 0.05;
+              }
+            } else if (mName.includes('base') || mName.includes('brass') || meshName.includes('screw') || meshName.includes('torus')) {
+              // Polished brass threaded base
+              mat.color.setHex(0xd4af37);
+              mat.metalness = 0.88;
+              mat.roughness = 0.28;
               mat.emissive.setHex(0x000000);
               mat.emissiveIntensity = 0;
+            } else if (mName.includes('support') || mName.includes('wire') || meshName.includes('cylinder.001')) {
+              // Lead support wires
+              mat.color.setHex(0xa1a1aa);
+              mat.metalness = 0.92;
+              mat.roughness = 0.2;
+              mat.emissive.setHex(isEmitting ? 0x7c2d12 : 0x000000);
+              mat.emissiveIntensity = isEmitting ? 0.3 : 0;
+            } else if (mName.includes('insulator')) {
+              mat.color.setHex(0x18181b);
+              mat.roughness = 0.85;
+            } else if (mName.includes('contact') || mName.includes('solder')) {
+              mat.color.setHex(0xa1a1aa);
+              mat.metalness = 0.95;
+              mat.roughness = 0.2;
+            } else {
+              // Fallback for custom or unified mesh
+              if (isEmitting) {
+                mat.color.setHex(0xfffbeb);
+                mat.emissive.setHex(0xf59e0b);
+                mat.emissiveIntensity = Math.min(3.0, emissionIntensity * 2.2);
+              } else {
+                mat.color.setHex(0xa1a1aa);
+                mat.emissive.setHex(0x000000);
+                mat.emissiveIntensity = 0;
+              }
             }
           }
         }
@@ -808,9 +878,21 @@ export default function CircuitWorkbench3D({
         // Optional LED / Bulb point light
         let light: THREE.PointLight | undefined;
         if (comp.type === 'LED' || comp.type === 'BULB_INCANDESCENT') {
-          const lightColor = comp.type === 'LED' ? 0xff3333 : 0xffaa44;
-          light = new THREE.PointLight(lightColor, 0, 0.08);
-          light.position.set(0, 0.008, 0);
+          const isBulb = comp.type === 'BULB_INCANDESCENT';
+          const lightColor = isBulb
+            ? 0xffaa33
+            : comp.ledColor === 'GREEN'
+            ? 0x22c55e
+            : comp.ledColor === 'BLUE'
+            ? 0x3b82f6
+            : comp.ledColor === 'YELLOW'
+            ? 0xf59e0b
+            : 0xef4444;
+          // Incandescent bulb has wide radiant coverage (0.35m); LED has focused 0.18m
+          const lightRadius = isBulb ? 0.35 : 0.18;
+          light = new THREE.PointLight(lightColor, 0, lightRadius, 1.8);
+          // Filament center is at Y=0.024; LED dome is at Y=0.012
+          light.position.set(0, isBulb ? 0.024 : 0.012, 0);
           light.userData = { targetIntensity: 0 };
           compGroup.add(light);
           activeLightsRef.current.push(light);
@@ -928,7 +1010,22 @@ export default function CircuitWorkbench3D({
       // Light emission update
       if (record.light) {
         if (comp.health !== 'BURNED_OUT' && (comp as any).isEmitting) {
-          const target = Math.min(2.5, ((comp as any).emissionIntensity || 1.0) * 1.5);
+          const isBulb = comp.type === 'BULB_INCANDESCENT';
+          const lightColor = isBulb
+            ? 0xffaa33
+            : comp.ledColor === 'GREEN'
+            ? 0x22c55e
+            : comp.ledColor === 'BLUE'
+            ? 0x3b82f6
+            : comp.ledColor === 'YELLOW'
+            ? 0xf59e0b
+            : 0xef4444;
+          record.light.color.setHex(lightColor);
+
+          // Bulbs radiate significantly higher luminous flux than 5mm LEDs
+          const target = isBulb
+            ? Math.min(5.5, Math.max(0.6, ((comp as any).emissionIntensity || 1.0) * 3.8))
+            : Math.min(2.5, Math.max(0.3, ((comp as any).emissionIntensity || 1.0) * 1.8));
           record.light.userData.targetIntensity = target;
         } else {
           record.light.userData.targetIntensity = 0;

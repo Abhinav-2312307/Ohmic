@@ -440,12 +440,21 @@ export function solveCircuit(
       const p1 = updated.pins[0]?.connectedHoleId;
       const p2 = updated.pins[1]?.connectedHoleId;
       if (p1 && p2) {
-        const v1 = holeVoltages.get(p1) ?? 0;
-        const v2 = holeVoltages.get(p2) ?? 0;
+        const v1 = getNodeVoltage(p1);
+        const v2 = getNodeVoltage(p2);
         vDrop = Math.abs(v1 - v2);
-        iCurrent = vDrop / Math.max(5, updated.value);
-        updated.isEmitting = vDrop > 0.5;
-        updated.emissionIntensity = Math.min(2.0, (vDrop / 6.0) ** 1.8);
+        const filamentResistance = Math.max(1, updated.value || 25);
+        iCurrent = vDrop / filamentResistance;
+        // Miniature incandescent bulb begins visible filament glow at >= 0.1V, reaching full brilliance at 4.5V - 6V
+        updated.isEmitting = vDrop > 0.1;
+        updated.emissionIntensity = updated.isEmitting
+          ? Math.min(3.0, Math.max(0.08, (vDrop / 4.5) ** 1.5))
+          : 0;
+      } else {
+        vDrop = 0;
+        iCurrent = 0;
+        updated.isEmitting = false;
+        updated.emissionIntensity = 0;
       }
     } else if (updated.type === 'SPEAKER') {
       const p1 = updated.pins[0]?.connectedHoleId;

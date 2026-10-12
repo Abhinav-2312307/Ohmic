@@ -557,6 +557,14 @@ export default function OhmicWorkbenchPage() {
         powerDissipated: 0,
         temperature: ambientTemperature,
         health: 'NORMAL',
+        maxPowerRating:
+          type === 'BULB_INCANDESCENT'
+            ? 5.0
+            : type === 'SPEAKER'
+            ? 15.0
+            : type === 'POTENTIOMETER'
+            ? 1.0
+            : 0.25,
       };
 
       const nextComponents = [...components, newComp];
