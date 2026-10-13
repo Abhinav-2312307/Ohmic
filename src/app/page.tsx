@@ -8,6 +8,8 @@ import PropertyInspector from '../components/PropertyInspector';
 import MultimeterPanel from '../components/MultimeterPanel';
 import OscilloscopePanel from '../components/OscilloscopePanel';
 import CodeEditor from '../components/CodeEditor';
+import ArduinoIDEModal from '../components/ArduinoIDEModal';
+import { ARDUINO_TEMPLATES } from '../engine/arduinoRuntime';
 import { CompiledCircuit } from '../dsl';
 
 const CircuitWorkbench3D = dynamic(() => import('../components/CircuitWorkbench3D'), {
@@ -66,6 +68,8 @@ export default function OhmicWorkbenchPage() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isControlsGuideOpen, setIsControlsGuideOpen] = useState(false);
   const [isDevModeOpen, setIsDevModeOpen] = useState(false);
+  const [isArduinoIdeOpen, setIsArduinoIdeOpen] = useState(false);
+  const [arduinoMcuId, setArduinoMcuId] = useState<string | null>(null);
 
   // Virtual Instruments State
   const [activeProbe, setActiveProbe] = useState<'RED' | 'BLACK' | null>(null);
@@ -105,10 +109,28 @@ export default function OhmicWorkbenchPage() {
       setWires(result.wires);
       setMultimeter(result.multimeter);
 
-      // Acoustic WebAudio synthesis
-      const speaker = result.components.find((c) => c.type === 'SPEAKER' && c.health !== 'BURNED_OUT');
-      if (speaker && speaker.voltageDrop > 0.05) {
-        audioEngine.updateSpeaker(speaker.voltageDrop, 440);
+      // Acoustic WebAudio synthesis for Speaker and Active/Passive Buzzers
+      const sounder = result.components.find(
+        (c) =>
+          (c.type === 'SPEAKER' || c.type === 'BUZZER_PASSIVE' || c.type === 'BUZZER_ACTIVE') &&
+          c.health !== 'BURNED_OUT' &&
+          c.voltageDrop > 0.05
+      );
+
+      if (sounder) {
+        let freq = sounder.state?.frequency || 440;
+        // Check if an MCU on the bench is outputting a tone frequency
+        const mcuWithTone = result.components.find(
+          (c) => (c.type === 'ARDUINO_NANO' || c.type === 'ARDUINO_UNO_R3') && (c.state?.arduinoState?.activeToneFreq ?? 0) > 0
+        );
+        if (mcuWithTone?.state?.arduinoState?.activeToneFreq) {
+          freq = mcuWithTone.state.arduinoState.activeToneFreq;
+        } else if (sounder.type === 'BUZZER_ACTIVE') {
+          freq = 2400; // Fixed active piezo tone
+        } else if (sounder.type === 'BUZZER_PASSIVE' && !sounder.state?.frequency) {
+          freq = 1000;
+        }
+        audioEngine.updateSpeaker(sounder.voltageDrop, freq);
       } else {
         audioEngine.updateSpeaker(0);
       }
@@ -221,6 +243,108 @@ export default function OhmicWorkbenchPage() {
     }
   }, [selectedComponentId, selectedWireId, deleteComponentAndWires, components, wires, applyCircuitUpdate]);
 
+  // Open Arduino IDE & Microcontroller Firmware Programmer Handler
+  const handleOpenArduinoIDE = useCallback((mcu?: CircuitComponent) => {
+    let target = mcu || null;
+    if (!target) {
+      target = components.find((c) => c.type === 'ARDUINO_NANO' || c.type === 'ARDUINO_UNO_R3' || c.type === 'ESP32_DEVKIT') || null;
+    }
+    if (!target) {
+      // Auto-place an Arduino Nano across columns 10-24 if none exists yet!
+      const col = 10;
+      const holeIds: string[] = [];
+      for (let i = 0; i < 15; i++) holeIds.push(`E${col + i}`);
+      for (let i = 0; i < 15; i++) holeIds.push(`F${col + i}`);
+      const newMcuId = `mcu_${Date.now()}`;
+      const nanoDefs = [
+        { id: 'd1',   name: 'D1 (TX)' },
+        { id: 'd0',   name: 'D0 (RX)' },
+        { id: 'rst',  name: 'RESET' },
+        { id: 'gnd',  name: 'GND' },
+        { id: 'd2',   name: 'D2' },
+        { id: 'd3',   name: 'D3 (~PWM)' },
+        { id: 'd4',   name: 'D4' },
+        { id: 'd5',   name: 'D5 (~PWM)' },
+        { id: 'd6',   name: 'D6 (~PWM)' },
+        { id: 'd7',   name: 'D7' },
+        { id: 'd8',   name: 'D8' },
+        { id: 'd9',   name: 'D9 (~PWM)' },
+        { id: 'd10',  name: 'D10 (~PWM)' },
+        { id: 'd11',  name: 'D11 (~PWM)' },
+        { id: 'd12',  name: 'D12' },
+        { id: 'd13',  name: 'D13 (LED)' },
+        { id: '3v3',  name: '3.3V Output' },
+        { id: 'aref', name: 'AREF' },
+        { id: 'a0',   name: 'A0' },
+        { id: 'a1',   name: 'A1' },
+        { id: 'a2',   name: 'A2' },
+        { id: 'a3',   name: 'A3' },
+        { id: 'a4',   name: 'A4 (SDA)' },
+        { id: 'a5',   name: 'A5 (SCL)' },
+        { id: 'a6',   name: 'A6' },
+        { id: 'a7',   name: 'A7' },
+        { id: '5v',   name: '5V Power' },
+        { id: 'rst2', name: 'RESET' },
+        { id: 'gnd2', name: 'GND' },
+        { id: 'vin',  name: 'VIN' },
+      ];
+      const pins = holeIds.map((hid, idx) => {
+        const def = nanoDefs[idx] || { id: `p${idx + 1}`, name: `Pin ${idx + 1}` };
+        return {
+          id: def.id,
+          name: def.name,
+          relativePos: [(idx % 15 - 7) * 0.00254, idx < 15 ? -0.00381 : 0.00381, 0] as [number, number, number],
+          connectedHoleId: hid,
+        };
+      });
+
+      const firstPos = getHolePosition(holeIds[0]);
+      const lastPos = getHolePosition(holeIds[holeIds.length - 1]);
+      const posX = firstPos && lastPos ? (firstPos[0] + lastPos[0]) / 2 : 0;
+      const posZ = firstPos && lastPos ? (firstPos[1] + lastPos[1]) / 2 : 0;
+
+      const newMcu: CircuitComponent = {
+        id: newMcuId,
+        type: 'ARDUINO_NANO',
+        name: 'Arduino Nano V3 (ATmega328P)',
+        value: 1,
+        unit: 'MCU',
+        position: [posX, posZ, 0.0062],
+        rotation: [0, 0, 0],
+        pins,
+        state: {
+          arduinoState: {
+            sourceCode: ARDUINO_TEMPLATES[0].code,
+            pins: {},
+            isCompiled: true,
+            isRunning: true,
+            serialBuffer: ['[BOOT] ATmega328P initialized at 16MHz.', 'Ready to flash.'],
+            activeToneFreq: 0,
+            virtualMillis: 0,
+          },
+        },
+        health: 'NORMAL',
+        temperature: ambientTemperature,
+        powerDissipated: 0,
+        voltageDrop: 0,
+        current: 0,
+      };
+
+      const next = [...components, newMcu];
+      applyCircuitUpdate(next, wires);
+      setSelectedComponentId(newMcuId);
+      setArduinoMcuId(newMcuId);
+      setIsArduinoIdeOpen(true);
+      audioEngine.playSnapSound();
+      return;
+    }
+
+    setArduinoMcuId(target.id);
+    setSelectedComponentId(target.id);
+    setIsArduinoIdeOpen(true);
+    audioEngine.playKnobClick();
+  }, [components, wires, ambientTemperature, applyCircuitUpdate]);
+
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -279,6 +403,8 @@ export default function OhmicWorkbenchPage() {
         setIsDrawerOpen((prev) => !prev);
       } else if (e.key === '`' || e.key === '~' || ((e.key === 'e' || e.key === 'E') && !selectedComponentId)) {
         setIsDevModeOpen((prev) => !prev);
+      } else if ((e.key === 'i' || e.key === 'I') && !selectedComponentId) {
+        handleOpenArduinoIDE();
       } else if (e.key === 'm' || e.key === 'M') {
         audioEngine.playKnobClick();
         setInstrumentTab((prev) => (prev === 'DMM' ? 'NONE' : 'DMM'));
@@ -985,16 +1111,52 @@ export default function OhmicWorkbenchPage() {
           ];
           break;
 
-        case 'ARDUINO_NANO':
+        case 'ARDUINO_NANO': {
           name = 'Arduino Nano V3 (ATmega328P)';
           unit = 'MCU';
-          pins = holeIds.map((hid, idx) => ({
-            id: `pin_${idx + 1}`,
-            name: idx === 11 ? '5V Output' : idx === 3 ? 'GND' : idx === 28 ? 'GND' : `DIP Pin ${idx + 1}`,
-            relativePos: [(idx % 15 - 7) * 0.00254, idx < 15 ? -0.00381 : 0.00381, 0] as [number, number, number],
-            connectedHoleId: hid,
-          }));
+          const nanoDefs = [
+            { id: 'd1',   name: 'D1 (TX)' },
+            { id: 'd0',   name: 'D0 (RX)' },
+            { id: 'rst',  name: 'RESET' },
+            { id: 'gnd',  name: 'GND' },
+            { id: 'd2',   name: 'D2' },
+            { id: 'd3',   name: 'D3 (~PWM)' },
+            { id: 'd4',   name: 'D4' },
+            { id: 'd5',   name: 'D5 (~PWM)' },
+            { id: 'd6',   name: 'D6 (~PWM)' },
+            { id: 'd7',   name: 'D7' },
+            { id: 'd8',   name: 'D8' },
+            { id: 'd9',   name: 'D9 (~PWM)' },
+            { id: 'd10',  name: 'D10 (~PWM)' },
+            { id: 'd11',  name: 'D11 (~PWM)' },
+            { id: 'd12',  name: 'D12' },
+            { id: 'd13',  name: 'D13 (LED)' },
+            { id: '3v3',  name: '3.3V Output' },
+            { id: 'aref', name: 'AREF' },
+            { id: 'a0',   name: 'A0' },
+            { id: 'a1',   name: 'A1' },
+            { id: 'a2',   name: 'A2' },
+            { id: 'a3',   name: 'A3' },
+            { id: 'a4',   name: 'A4 (SDA)' },
+            { id: 'a5',   name: 'A5 (SCL)' },
+            { id: 'a6',   name: 'A6' },
+            { id: 'a7',   name: 'A7' },
+            { id: '5v',   name: '5V Power' },
+            { id: 'rst2', name: 'RESET' },
+            { id: 'gnd2', name: 'GND' },
+            { id: 'vin',  name: 'VIN' },
+          ];
+          pins = holeIds.map((hid, idx) => {
+            const def = nanoDefs[idx] || { id: `pin_${idx + 1}`, name: `Pin ${idx + 1}` };
+            return {
+              id: def.id,
+              name: def.name,
+              relativePos: [(idx % 15 - 7) * 0.00254, idx < 15 ? -0.00381 : 0.00381, 0] as [number, number, number],
+              connectedHoleId: hid,
+            };
+          });
           break;
+        }
 
         case 'ESP32_DEVKIT':
           name = 'ESP32 NodeMCU DevKit V1 (Wi-Fi + BLE)';
@@ -1035,6 +1197,21 @@ export default function OhmicWorkbenchPage() {
           }));
       }
 
+      let compState: CircuitComponent['state'] | undefined = undefined;
+      if (type === 'ARDUINO_NANO' || type === 'ARDUINO_UNO_R3') {
+        compState = {
+          arduinoState: {
+            sourceCode: ARDUINO_TEMPLATES[0].code,
+            pins: {},
+            isCompiled: true,
+            isRunning: true,
+            serialBuffer: ['[BOOT] ATmega328P initialized at 16MHz.', 'Ready to flash.'],
+            activeToneFreq: 0,
+            virtualMillis: 0,
+          },
+        };
+      }
+
       const newComp: CircuitComponent = {
         id,
         type,
@@ -1045,6 +1222,7 @@ export default function OhmicWorkbenchPage() {
         rotation: [0, (rotationDeg * Math.PI) / 180, 0],
         modelUrl,
         pins,
+        state: compState,
         voltageDrop: 0,
         current: 0,
         powerDissipated: 0,
@@ -1187,6 +1365,7 @@ export default function OhmicWorkbenchPage() {
         onToggleDevMode={() => setIsDevModeOpen(!isDevModeOpen)}
         instrumentTab={instrumentTab}
         onToggleInstrument={(tab) => setInstrumentTab(instrumentTab === tab ? 'NONE' : tab)}
+        onOpenArduinoIDE={() => handleOpenArduinoIDE()}
         components={components}
         wires={wires}
         onApplyCompiledCircuit={handleApplyCompiledCircuit}
@@ -1287,6 +1466,7 @@ export default function OhmicWorkbenchPage() {
             audioEngine.playPopSound();
           }}
           onRotateComponent={(_id, dir) => handleRotateSelected(dir)}
+          onOpenArduinoIDE={(comp) => handleOpenArduinoIDE(comp)}
           onClose={() => {
             setSelectedComponentId(null);
             setSelectedWireId(null);
@@ -1373,6 +1553,23 @@ export default function OhmicWorkbenchPage() {
       <ControlsGuideModal
         isOpen={isControlsGuideOpen}
         onClose={() => setIsControlsGuideOpen(false)}
+      />
+
+      {/* Arduino C++ Firmware IDE & Programmer Modal */}
+      <ArduinoIDEModal
+        isOpen={isArduinoIdeOpen}
+        onClose={() => setIsArduinoIdeOpen(false)}
+        mcuComponent={
+          components.find((c) => c.id === arduinoMcuId) ||
+          components.find((c) => c.type === 'ARDUINO_NANO' || c.type === 'ARDUINO_UNO_R3' || c.type === 'ESP32_DEVKIT') ||
+          null
+        }
+        onUpdateComponentState={(id, newState) => {
+          const next = components.map((c) =>
+            c.id === id ? { ...c, state: { ...c.state, ...newState } } : c
+          );
+          applyCircuitUpdate(next, wires);
+        }}
       />
     </div>
   );

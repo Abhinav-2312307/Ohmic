@@ -28,6 +28,7 @@ import {
   Maximize2,
   Check,
   Zap,
+  Cpu,
 } from 'lucide-react';
 import { getPresetCircuits, PresetCircuit } from '../presets/sampleCircuits';
 import {
@@ -72,6 +73,7 @@ interface TopToolbarProps {
 
   instrumentTab?: 'DMM' | 'SCOPE' | 'NONE';
   onToggleInstrument?: (instrument: 'DMM' | 'SCOPE') => void;
+  onOpenArduinoIDE?: () => void;
 
   components?: CircuitComponent[];
   wires?: JumperWire[];
@@ -117,6 +119,7 @@ export default function TopToolbar({
   onToggleDevMode,
   instrumentTab = 'NONE',
   onToggleInstrument,
+  onOpenArduinoIDE,
   components = [],
   wires = [],
   onApplyCompiledCircuit,
@@ -1024,6 +1027,18 @@ export default function TopToolbar({
             >
               <Code2 className="w-3.5 h-3.5 text-cyan-400" />
               <span>OHMSCRIPT</span>
+            </button>
+          )}
+
+          {/* Arduino IDE Firmware Button */}
+          {onOpenArduinoIDE && (
+            <button
+              onClick={onOpenArduinoIDE}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all text-zinc-300 hover:text-teal-300 bg-zinc-900/80 hover:bg-zinc-850 border border-teal-500/30 hover:border-teal-400/50 shadow-sm"
+              title="Open Arduino IDE & C++ Sketch Editor (Firmware)"
+            >
+              <Cpu className="w-3.5 h-3.5 text-teal-400" />
+              <span>ARDUINO IDE</span>
             </button>
           )}
 

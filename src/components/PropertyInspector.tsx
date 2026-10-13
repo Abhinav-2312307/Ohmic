@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { CircuitComponent, JumperWire } from '../engine/componentTypes';
-import { Flame, AlertTriangle, Trash2, Cpu, Zap, Activity, RotateCw, RotateCcw, X, Spline } from 'lucide-react';
+import { Flame, AlertTriangle, Trash2, Cpu, Zap, Activity, RotateCw, RotateCcw, X, Spline, Code2 } from 'lucide-react';
 import { audioEngine } from '../engine/audioEngine';
 
 interface PropertyInspectorProps {
@@ -14,6 +14,7 @@ interface PropertyInspectorProps {
   onDeleteWire?: (id: string) => void;
   onRotateComponent?: (id: string, direction?: 'CW' | 'CCW') => void;
   onResetHealth?: (id: string) => void;
+  onOpenArduinoIDE?: (comp: CircuitComponent) => void;
   onClose: () => void;
 }
 
@@ -26,6 +27,7 @@ export default function PropertyInspector({
   onDeleteWire,
   onRotateComponent,
   onResetHealth,
+  onOpenArduinoIDE,
   onClose,
 }: PropertyInspectorProps) {
   if (!selectedComponent && !selectedWire) return null;
@@ -631,6 +633,42 @@ export default function PropertyInspector({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Arduino Microcontroller Firmware & IDE Launcher */}
+      {(c.type === 'ARDUINO_NANO' || c.type === 'ARDUINO_UNO_R3' || c.type === 'ESP32_DEVKIT') && (
+        <div className="my-3 p-3 bg-gradient-to-br from-teal-950/40 via-zinc-950/60 to-zinc-950 rounded-xl border border-teal-500/30 flex flex-col gap-2.5">
+          <div className="flex items-center justify-between text-xs font-mono">
+            <span className="text-teal-400 font-bold flex items-center gap-1.5">
+              <Cpu className="w-3.5 h-3.5 text-teal-400" />
+              <span>ATmega328P FIRMWARE</span>
+            </span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-teal-500/20 text-teal-300 font-bold">
+              {c.state?.arduinoState?.isRunning ? 'RUNNING' : 'ACTIVE'}
+            </span>
+          </div>
+
+          <p className="text-[11px] font-mono text-zinc-400 leading-snug">
+            Programmable microcontroller. Write C++ Arduino sketches, execute custom code, generate PWM tones, and read sensor pins.
+          </p>
+
+          {c.state?.arduinoState?.activeToneFreq ? (
+            <div className="flex items-center justify-between px-2.5 py-1.5 bg-fuchsia-950/40 border border-fuchsia-500/30 rounded-lg text-xs font-mono text-fuchsia-300">
+              <span>Active Tone Output:</span>
+              <span className="font-bold">{c.state.arduinoState.activeToneFreq} Hz</span>
+            </div>
+          ) : null}
+
+          {onOpenArduinoIDE && (
+            <button
+              onClick={() => onOpenArduinoIDE(c)}
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-teal-600 hover:bg-teal-500 text-zinc-950 font-bold rounded-xl text-xs font-mono transition-all shadow-md shadow-teal-600/20 active:scale-95"
+            >
+              <Code2 className="w-4 h-4" />
+              <span>Open Arduino IDE & Code</span>
+            </button>
+          )}
         </div>
       )}
 

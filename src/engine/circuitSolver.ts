@@ -1,5 +1,6 @@
 import { CircuitComponent, JumperWire, MultimeterState } from './componentTypes';
 import { BREADBOARD_HOLES } from './breadboardModel';
+import { getArduinoVM } from './arduinoRuntime';
 
 export interface SolverResult {
   nodeVoltages: Map<number, number>;
@@ -791,6 +792,37 @@ export function solveCircuit(
             }
           });
         }
+      } else if (comp.type === 'ARDUINO_NANO' || comp.type === 'ARDUINO_UNO_R3') {
+        const pGND = comp.pins.find((p) => p.id?.includes('gnd') || p.name?.includes('GND'))?.connectedHoleId;
+        const nGND = pGND ? (rootToNodeId.get(uf.find(pGND)) ?? 0) : 0;
+        const vm = getArduinoVM(comp.id, comp.state?.arduinoState?.sourceCode);
+
+        comp.pins.forEach((pin) => {
+          if (!pin.connectedHoleId) return;
+          const pidUpper = pin.id.toUpperCase();
+          const pinState = vm.pins[pidUpper] || vm.pins[pidUpper.replace(/^D/, '')];
+          if (!pinState) return;
+
+          const nPin = rootToNodeId.get(uf.find(pin.connectedHoleId)) ?? 0;
+          if (nPin === 0 || nPin === nGND) return;
+
+          if (pinState.mode === 'OUTPUT') {
+            const isHigh = pinState.digitalValue || (pinState.toneFreq > 0);
+            const rOut = 30; // 30 ohm internal driver resistance
+            stampConductance(nPin, nGND, 1 / rOut);
+            if (isHigh) {
+              const ieq = 5.0 / rOut;
+              if (nPin - 1 >= 0) z[nPin - 1] += ieq;
+              if (nGND - 1 >= 0) z[nGND - 1] -= ieq;
+            }
+          } else if (pinState.mode === 'INPUT_PULLUP') {
+            const rPull = 30000; // 30k pullup resistor
+            stampConductance(nPin, nGND, 1 / rPull);
+            const ieq = 5.0 / rPull;
+            if (nPin - 1 >= 0) z[nPin - 1] += ieq;
+            if (nGND - 1 >= 0) z[nGND - 1] -= ieq;
+          }
+        });
       } else if (comp.type === 'RELAY_MODULE_5V') {
         const pGND = comp.pins.find((p) => p.id === 'gnd')?.connectedHoleId;
         const pIN = comp.pins.find((p) => p.id === 'in')?.connectedHoleId;
@@ -1247,6 +1279,27 @@ export function solveCircuit(
         vDrop = Math.abs(getNodeVoltage(pV) - getNodeVoltage(pG));
         iCurrent = 0.015;
       }
+    } else if (updated.type === 'ARDUINO_NANO' || updated.type === 'ARDUINO_UNO_R3') {
+      const vm = getArduinoVM(updated.id, updated.state?.arduinoState?.sourceCode);
+      const pinVoltages: Record<string, number> = {};
+      updated.pins.forEach((pin) => {
+        if (pin.connectedHoleId) {
+          const v = getNodeVoltage(pin.connectedHoleId);
+          pinVoltages[pin.id] = v;
+          pinVoltages[pin.id.toUpperCase()] = v;
+          if (/^d\d+$/i.test(pin.id)) {
+            pinVoltages[pin.id.substring(1)] = v;
+          }
+        }
+      });
+      const arduinoState = vm.step(50, pinVoltages);
+      updated.state = {
+        ...updated.state,
+        arduinoState,
+        frequency: arduinoState.activeToneFreq || 0,
+      };
+      vDrop = 5.0;
+      iCurrent = 0.025;
     }
 
     const power = vDrop * iCurrent;

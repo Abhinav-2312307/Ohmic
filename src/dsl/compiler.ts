@@ -576,6 +576,38 @@ function getComponentBlueprint(
       const kind = primaryValue.toLowerCase();
       const isEsp32 = kind.includes('esp32');
       const isUno = kind.includes('uno');
+      const nanoPinDefs = [
+        { id: 'd1',   name: 'D1 (TX)' },
+        { id: 'd0',   name: 'D0 (RX)' },
+        { id: 'rst',  name: 'RESET' },
+        { id: 'gnd',  name: 'GND' },
+        { id: 'd2',   name: 'D2' },
+        { id: 'd3',   name: 'D3 (~PWM)' },
+        { id: 'd4',   name: 'D4' },
+        { id: 'd5',   name: 'D5 (~PWM)' },
+        { id: 'd6',   name: 'D6 (~PWM)' },
+        { id: 'd7',   name: 'D7' },
+        { id: 'd8',   name: 'D8' },
+        { id: 'd9',   name: 'D9 (~PWM)' },
+        { id: 'd10',  name: 'D10 (~PWM)' },
+        { id: 'd11',  name: 'D11 (~PWM)' },
+        { id: 'd12',  name: 'D12' },
+        { id: 'd13',  name: 'D13 (LED)' },
+        { id: '3v3',  name: '3.3V Output' },
+        { id: 'aref', name: 'AREF' },
+        { id: 'a0',   name: 'A0' },
+        { id: 'a1',   name: 'A1' },
+        { id: 'a2',   name: 'A2' },
+        { id: 'a3',   name: 'A3' },
+        { id: 'a4',   name: 'A4 (SDA)' },
+        { id: 'a5',   name: 'A5 (SCL)' },
+        { id: 'a6',   name: 'A6' },
+        { id: 'a7',   name: 'A7' },
+        { id: '5v',   name: '5V Power' },
+        { id: 'rst2', name: 'RESET' },
+        { id: 'gnd2', name: 'GND' },
+        { id: 'vin',  name: 'VIN' },
+      ];
       return {
         type: isEsp32 ? 'ESP32_DEVKIT' : isUno ? 'ARDUINO_UNO_R3' : 'ARDUINO_NANO',
         name: isEsp32 ? 'ESP32 NodeMCU DevKit V1' : isUno ? 'Arduino Uno R3' : 'Arduino Nano V3',
@@ -583,12 +615,15 @@ function getComponentBlueprint(
         unit: 'MCU',
         defaultValue: 1,
         pinTemplate: (holeIds) =>
-          holeIds.map((hid, idx) => ({
-            id: `p${idx + 1}`,
-            name: `Pin ${idx + 1}`,
-            relativePos: [(idx % 15 - 7) * 0.00254, idx < 15 ? -0.00381 : 0.00381, 0] as [number, number, number],
-            connectedHoleId: hid,
-          })),
+          holeIds.map((hid, idx) => {
+            const def = nanoPinDefs[idx] || { id: `p${idx + 1}`, name: `Pin ${idx + 1}` };
+            return {
+              id: def.id,
+              name: def.name,
+              relativePos: [(idx % 15 - 7) * 0.00254, idx < 15 ? -0.00381 : 0.00381, 0] as [number, number, number],
+              connectedHoleId: hid,
+            };
+          }),
       };
     }
 
@@ -827,6 +862,24 @@ function resolveWireEndpoint(endpoint: string, componentMap: Map<string, Circuit
             (pname.includes('cathode') || pid === 'l2' || pid === 'p2' || pid === 'k' || pid === 'cp2')) {
           return true;
         }
+
+        // Arduino digital pin matching e.g. "d8", "8", "pin 8"
+        if (/^d?\d+$/i.test(norm)) {
+          const dName = norm.startsWith('d') ? norm : `d${norm}`;
+          if (pid === dName || pid === norm || pname.toLowerCase().startsWith(dName)) return true;
+        }
+
+        // Arduino analog pin matching e.g. "a0".."a7"
+        if (/^a\d+$/i.test(norm)) {
+          if (pid === norm || pname.toLowerCase().startsWith(norm)) return true;
+        }
+
+        // Arduino power rails: 5v, 3v3, gnd, vin, reset
+        if ((norm === '5v' || norm === 'vcc') && (pid === '5v' || pname.includes('5v'))) return true;
+        if ((norm === '3v3' || norm === '3.3v') && (pid === '3v3' || pname.includes('3.3'))) return true;
+        if (norm === 'gnd' && (pid.includes('gnd') || pname.includes('gnd'))) return true;
+        if (norm === 'vin' && (pid === 'vin' || pname.includes('vin'))) return true;
+        if ((norm === 'rst' || norm === 'reset') && (pid.includes('rst') || pname.includes('reset'))) return true;
 
         // DIP and IC pin matching e.g. "p8", "8", "pin 8"
         const numMatch = norm.match(/^p?(\d+)$/);

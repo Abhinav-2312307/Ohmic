@@ -128,7 +128,27 @@ export interface CircuitComponent {
     rgbColor?: [number, number, number]; // [r, g, b] 0-255 for RGB LED & WS2812B
     encoderPosition?: number; // For KY-040 rotary encoder
     keypadKey?: string; // For 4x4 Keypad
+    arduinoState?: ArduinoBoardState; // For Arduino Nano / Uno programmable firmware
   };
+}
+
+export interface ArduinoPinState {
+  mode: 'INPUT' | 'OUTPUT' | 'INPUT_PULLUP';
+  digitalValue: boolean;
+  analogValue: number;
+  toneFreq: number;
+  inputVoltage: number;
+}
+
+export interface ArduinoBoardState {
+  sourceCode: string;
+  isCompiled: boolean;
+  isRunning: boolean;
+  compileError?: string;
+  serialBuffer: string[];
+  activeToneFreq?: number;
+  pins: Record<string, ArduinoPinState>;
+  virtualMillis?: number;
 }
 
 export interface JumperWire {
