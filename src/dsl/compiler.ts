@@ -870,13 +870,33 @@ export function compile(ast: OhmScriptAST): CompiledCircuit {
           position = [-0.082, 0.006, 0.008];
           holeIds = ['TOP_POS_1', 'TOP_NEG_1', 'BOT_POS_1', 'BOT_NEG_1'];
           pinConnections = blueprint.pinTemplate(holeIds);
-        } else if (blueprint.type === 'SPEAKER') {
-          // Speaker on bench mat outside breadboard (right side)
-          position = [0.065, 0.052, 0.0];
-          pinConnections = [
-            { id: 'pos', name: '+', relativePos: [-0.009, 0, 0.014], connectedHoleId: `${compNode.id}:pos` },
-            { id: 'neg', name: '-', relativePos: [0.009, 0, 0.014], connectedHoleId: `${compNode.id}:neg` },
-          ];
+        } else if (
+          blueprint.type === 'SPEAKER' ||
+          blueprint.type === 'DC_GEAR_MOTOR' ||
+          blueprint.type === 'SERVO_SG90' ||
+          blueprint.type === 'RELAY_MODULE_5V' ||
+          blueprint.type === 'KEYPAD_4X4' ||
+          blueprint.type === 'ARDUINO_UNO_R3' ||
+          blueprint.type === 'TOOL_SOLDERING_IRON'
+        ) {
+          position =
+            blueprint.type === 'SPEAKER'
+              ? [0.065, 0.052, 0.0]
+              : blueprint.type === 'DC_GEAR_MOTOR'
+              ? [0.08, 0.052, 0.0]
+              : blueprint.type === 'SERVO_SG90'
+              ? [0.07, 0.052, 0.0]
+              : blueprint.type === 'RELAY_MODULE_5V'
+              ? [-0.065, 0.052, 0.0]
+              : blueprint.type === 'KEYPAD_4X4'
+              ? [0.08, 0.052, 0.0]
+              : blueprint.type === 'TOOL_SOLDERING_IRON'
+              ? [0.09, 0.052, 0.0]
+              : [-0.08, 0.052, 0.0];
+          pinConnections = blueprint.pinTemplate([]).map((p) => ({
+            ...p,
+            connectedHoleId: `${compNode.id}:${p.id}`,
+          }));
         } else {
           // Battery / DC power supply on bench mat (left side)
           const bx = battX + batteryCount * 0.03;
@@ -884,9 +904,9 @@ export function compile(ast: OhmScriptAST): CompiledCircuit {
           batteryCount++;
 
           // Battery pins get virtual terminal IDs (not breadboard holes)
-          pinConnections = blueprint.pinTemplate([]).map(p => ({
+          pinConnections = blueprint.pinTemplate([]).map((p) => ({
             ...p,
-            connectedHoleId: p.id === 'pos' ? `${compNode.id}:pos` : `${compNode.id}:neg`,
+            connectedHoleId: `${compNode.id}:${p.id}`,
           }));
         }
       } else {
@@ -977,6 +997,28 @@ export function compile(ast: OhmScriptAST): CompiledCircuit {
       comp.state = { ...comp.state, isClosed: setNode.value.toLowerCase() === 'true' };
     } else if (propLower === 'frequency' || propLower === 'freq') {
       comp.state = { ...comp.state, frequency: parseFloat(setNode.value) };
+    } else if (propLower === 'angle' || propLower === 'servoangle') {
+      comp.state = { ...comp.state, servoAngle: parseFloat(setNode.value) };
+    } else if (propLower === 'relay' || propLower === 'relayenergized') {
+      comp.state = { ...comp.state, relayEnergized: setNode.value.toLowerCase() === 'true' };
+    } else if (propLower === 'distance' || propLower === 'distancecm') {
+      comp.state = { ...comp.state, distanceCm: parseFloat(setNode.value) };
+    } else if (propLower === 'temp' || propLower === 'temperature') {
+      comp.state = { ...comp.state, temperatureC: parseFloat(setNode.value) };
+    } else if (propLower === 'humidity' || propLower === 'hum') {
+      comp.state = { ...comp.state, humidityPct: parseFloat(setNode.value) };
+    } else if (propLower === 'motion' || propLower === 'motiondetected') {
+      comp.state = { ...comp.state, motionDetected: setNode.value.toLowerCase() === 'true' };
+    } else if (propLower === 'sound' || propLower === 'soundlevel') {
+      comp.state = { ...comp.state, soundLevel: parseFloat(setNode.value) };
+    } else if (propLower === 'moisture' || propLower === 'moisturelevel') {
+      comp.state = { ...comp.state, moistureLevel: parseFloat(setNode.value) };
+    } else if (propLower === 'magnet' || propLower === 'magneticdetected') {
+      comp.state = { ...comp.state, magneticDetected: setNode.value.toLowerCase() === 'true' };
+    } else if (propLower === 'key' || propLower === 'keypadkey') {
+      comp.state = { ...comp.state, keypadKey: setNode.value };
+    } else if (propLower === 'encoder' || propLower === 'encoderposition') {
+      comp.state = { ...comp.state, encoderPosition: parseFloat(setNode.value) };
     } else if (propLower === 'value') {
       comp.value = parseElectricalValue(setNode.value).value;
     }
