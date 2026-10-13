@@ -149,23 +149,20 @@ export function tokenize(source: string): LexResult {
         continue;
       }
 
-      // Number or Value+Unit (9V, 470, 0.25W, 10k, etc.)
+      // Number, Value+Unit, or Part Identifier starting with digit (e.g. 9V, 470Ω, 100uF, 1N4148, 2N2222)
       if (/[0-9]/.test(line[col])) {
-        let num = '';
-        while (col < line.length && /[0-9.]/.test(line[col])) {
-          num += line[col];
+        let text = '';
+        while (col < line.length && /[0-9a-zA-Z_Ωµ]/.test(line[col])) {
+          text += line[col];
           col++;
         }
-        // Check for trailing unit
-        let unit = '';
-        while (col < line.length && /[a-zA-ZΩµ]/.test(line[col])) {
-          unit += line[col];
-          col++;
-        }
-        if (unit) {
-          tokens.push({ type: TokenType.VALUE_WITH_UNIT, value: num + unit, line: lineNum, col: startCol });
+        if (VALUE_UNIT_REGEX.test(text)) {
+          tokens.push({ type: TokenType.VALUE_WITH_UNIT, value: text, line: lineNum, col: startCol });
+        } else if (/^[0-9]+(\.[0-9]+)?$/.test(text)) {
+          tokens.push({ type: TokenType.NUMBER, value: text, line: lineNum, col: startCol });
         } else {
-          tokens.push({ type: TokenType.NUMBER, value: num, line: lineNum, col: startCol });
+          // Part numbers or identifiers starting with digit (e.g. 1N4148, 1N4007, 2N2222, 74HC595)
+          tokens.push({ type: TokenType.IDENTIFIER, value: text, line: lineNum, col: startCol });
         }
         continue;
       }

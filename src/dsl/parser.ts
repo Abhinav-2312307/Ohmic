@@ -127,6 +127,8 @@ export class Parser {
       TokenType.KW_BAT, TokenType.KW_RES, TokenType.KW_LED, TokenType.KW_POT,
       TokenType.KW_BULB, TokenType.KW_SPK, TokenType.KW_SW, TokenType.KW_CAP,
       TokenType.KW_IND, TokenType.KW_IC555, TokenType.KW_SEG7,
+      TokenType.KW_DIODE, TokenType.KW_NPN, TokenType.KW_PNP,
+      TokenType.KW_MOSFET, TokenType.KW_LDR, TokenType.KW_LM358, TokenType.KW_MB102,
     ].includes(type);
   }
 
