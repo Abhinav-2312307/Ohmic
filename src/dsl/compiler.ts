@@ -24,7 +24,7 @@ function parseElectricalValue(raw: string): { value: number; unit: string } {
   if (!raw) return { value: 0, unit: '' };
 
   // Try value+unit patterns
-  const match = raw.match(/^(\d+\.?\d*)(V|Ω|W|uF|µF|nF|pF|mH|H|k|K|M)?$/i);
+  const match = raw.match(/^(\d*\.?\d+)(V|Ω|W|uF|µF|nF|pF|mH|H|k|K|M)?$/i);
   if (match) {
     let num = parseFloat(match[1]);
     const unit = match[2] || '';
@@ -751,6 +751,14 @@ interface ParsedPlacement {
   holeIds: string[];
 }
 
+function normalizeHoleId(id: string): string {
+  const trimmed = id.trim();
+  if (/^BOTTOM_(NEG|POS)(_\d+)?$/i.test(trimmed)) {
+    return trimmed.replace(/^BOTTOM_/i, 'BOT_').toUpperCase();
+  }
+  return trimmed;
+}
+
 function parsePlacementLocation(location: string): ParsedPlacement {
   const loc = location.trim().toLowerCase();
   if (loc === 'bench') {
@@ -759,18 +767,18 @@ function parsePlacementLocation(location: string): ParsedPlacement {
 
   // 3-pin: "E10:E11:E12"
   if (location.includes(':')) {
-    const parts = location.split(':').map(s => s.trim());
+    const parts = location.split(':').map(s => normalizeHoleId(s));
     return { mode: parts.length > 3 ? 'multi' : '3pin', holeIds: parts };
   }
 
   // 2-pin: "E15-E19"
   if (location.includes('-')) {
-    const parts = location.split('-').map(s => s.trim());
+    const parts = location.split('-').map(s => normalizeHoleId(s));
     return { mode: '2pin', holeIds: parts };
   }
 
   // Single hole (used as center)
-  return { mode: '2pin', holeIds: [location] };
+  return { mode: '2pin', holeIds: [normalizeHoleId(location)] };
 }
 
 // ── Wire Endpoint Resolution ─────────────────────────────────────────────────
@@ -835,7 +843,7 @@ function resolveWireEndpoint(endpoint: string, componentMap: Map<string, Circuit
     }
     return `${compId}:${pinName}`;
   }
-  return endpoint;
+  return normalizeHoleId(endpoint);
 }
 
 // ── Main Compiler ────────────────────────────────────────────────────────────
