@@ -756,54 +756,8 @@ export function solveCircuit(
         if (pVDD && pVSS) {
           const nVDD = rootToNodeId.get(uf.find(pVDD)) ?? 0;
           const nVSS = rootToNodeId.get(uf.find(pVSS)) ?? 0;
-
-          // Clock pin (p14), Reset pin (p15), Enable/Inhibit (p13)
-          const pCLK = comp.pins.find((p) => p.id === 'p14' || p.name?.includes('CLK'))?.connectedHoleId;
-          const pRST = comp.pins.find((p) => p.id === 'p15' || p.name?.includes('RESET'))?.connectedHoleId;
-          const pINH = comp.pins.find((p) => p.id === 'p13' || p.name?.includes('INH') || p.name?.includes('ENABLE'))?.connectedHoleId;
-
-          const nCLK = pCLK ? (rootToNodeId.get(uf.find(pCLK)) ?? 0) : 0;
-          const nRST = pRST ? (rootToNodeId.get(uf.find(pRST)) ?? 0) : 0;
-          const nINH = pINH ? (rootToNodeId.get(uf.find(pINH)) ?? 0) : 0;
-
-          const vClk = nCLK === 0 ? 0 : x[nCLK - 1] || 0;
-          const vRst = nRST === 0 ? 0 : x[nRST - 1] || 0;
-          const vInh = nINH === 0 ? 0 : x[nINH - 1] || 0;
-          const vGnd = nVSS === 0 ? 0 : x[nVSS - 1] || 0;
-
-          let activeIdx = comp.state?.counterIndex ?? 0;
-          const prevClk = (comp.state as any)?.lastClkHigh ?? false;
-          const isClkHigh = (vClk - vGnd) >= 2.0;
-          const isInhibited = (vInh - vGnd) >= 2.0;
-
+          const activeIdx = (comp.state?.counterIndex ?? 0) % 10;
           const qPinIds = ['p3', 'p2', 'p4', 'p7', 'p10', 'p1', 'p5', 'p6', 'p9', 'p11'];
-          const resetQIndex = qPinIds.findIndex((pid) => {
-            const pinHole = comp.pins.find((p) => p.id === pid)?.connectedHoleId;
-            return pinHole && pRST && uf.find(pinHole) === uf.find(pRST);
-          });
-
-          // Clock rising edge detection (only once per solve step, not on every diode iteration)
-          if (iter === 0) {
-            if (!isInhibited && !prevClk && isClkHigh) {
-              activeIdx = (activeIdx + 1) % 10;
-              if (resetQIndex !== -1 && activeIdx >= resetQIndex) {
-                activeIdx = 0;
-              }
-            }
-
-            // External active-high reset
-            if ((vRst - vGnd) >= 2.0 && resetQIndex === -1) {
-              activeIdx = 0;
-            }
-
-            comp.state = {
-              ...comp.state,
-              counterIndex: activeIdx,
-              lastClkHigh: isClkHigh,
-            } as any;
-          }
-
-
           qPinIds.forEach((pid, qIdx) => {
             const pinHole = comp.pins.find((p) => p.id === pid)?.connectedHoleId;
             if (pinHole) {
@@ -1233,7 +1187,53 @@ export function solveCircuit(
         vDrop = Math.abs(getNodeVoltage(pV) - getNodeVoltage(pG));
         iCurrent = 0.002;
       }
-    } else if (updated.type === 'DIP16_CD4017' || updated.type === 'DIP16_74HC595' || updated.type === 'DIP16_L293D') {
+    } else if (updated.type === 'DIP16_CD4017') {
+      const pV = updated.pins.find((p) => p.id === 'p16' || p.name?.includes('VDD'))?.connectedHoleId;
+      const pG = updated.pins.find((p) => p.id === 'p8' || p.name?.includes('VSS') || p.name?.includes('GND'))?.connectedHoleId;
+      const pCLK = updated.pins.find((p) => p.id === 'p14' || p.name?.includes('CLK'))?.connectedHoleId;
+      const pRST = updated.pins.find((p) => p.id === 'p15' || p.name?.includes('RESET'))?.connectedHoleId;
+      const pINH = updated.pins.find((p) => p.id === 'p13' || p.name?.includes('INH') || p.name?.includes('ENABLE'))?.connectedHoleId;
+
+      if (pV && pG) {
+        vDrop = Math.abs(getNodeVoltage(pV) - getNodeVoltage(pG));
+        iCurrent = 0.005;
+
+        const vClk = pCLK ? getNodeVoltage(pCLK) : 0;
+        const vRst = pRST ? getNodeVoltage(pRST) : 0;
+        const vInh = pINH ? getNodeVoltage(pINH) : 0;
+        const vGnd = getNodeVoltage(pG);
+
+        let activeIdx = comp.state?.counterIndex ?? 0;
+        const prevClk = Boolean((comp.state as any)?.lastClkHigh);
+        const isClkHigh = (vClk - vGnd) >= 2.0;
+        const isInhibited = (vInh - vGnd) >= 2.0;
+
+        const qPinIds = ['p3', 'p2', 'p4', 'p7', 'p10', 'p1', 'p5', 'p6', 'p9', 'p11'];
+        const resetQIndex = qPinIds.findIndex((pid) => {
+          const pinHole = updated.pins.find((p) => p.id === pid)?.connectedHoleId;
+          return pinHole && pRST && uf.find(pinHole) === uf.find(pRST);
+        });
+
+        // Rising clock edge detected!
+        if (!isInhibited && !prevClk && isClkHigh) {
+          activeIdx = (activeIdx + 1) % 10;
+          if (resetQIndex !== -1 && activeIdx >= resetQIndex) {
+            activeIdx = 0;
+          }
+        }
+
+        // Active high reset pin
+        if ((vRst - vGnd) >= 2.0 && resetQIndex === -1) {
+          activeIdx = 0;
+        }
+
+        updated.state = {
+          ...updated.state,
+          counterIndex: activeIdx,
+          lastClkHigh: isClkHigh,
+        };
+      }
+    } else if (updated.type === 'DIP16_74HC595' || updated.type === 'DIP16_L293D') {
       const pV = updated.pins.find((p) => p.id === 'p16')?.connectedHoleId;
       const pG = updated.pins.find((p) => p.id === 'p8')?.connectedHoleId;
       if (pV && pG) {
