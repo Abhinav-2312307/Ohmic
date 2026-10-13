@@ -27,8 +27,8 @@ const DIRECTIVE_MAP: Record<string, TokenType> = {
   '@probe_mode':  TokenType.DIR_PROBE_MODE,
 };
 
-// Match values like: 9V, 470Ω, 0.25W, 100uF, 10mH, 10k, 4.7k, 100nF
-const VALUE_UNIT_REGEX = /^(\d+\.?\d*)(V|Ω|W|uF|µF|nF|pF|mH|H|k|K|M)$/;
+// Match values like: 9V, 470Ω, 0.25W, 100uF, 2.2uF, 10mH, 10k, 4.7k, 100nF
+const VALUE_UNIT_REGEX = /^(\d*\.?\d+)(V|Ω|W|uF|µF|nF|pF|mH|H|k|K|M)$/i;
 
 export function tokenize(source: string): LexResult {
   const tokens: Token[] = [];
@@ -84,9 +84,13 @@ export function tokenize(source: string): LexResult {
 
       // Dot .
       if (line[col] === '.') {
-        tokens.push({ type: TokenType.DOT, value: '.', line: lineNum, col: startCol });
-        col++;
-        continue;
+        if (col + 1 < line.length && /[0-9]/.test(line[col + 1])) {
+          // Fall through to number parsing below
+        } else {
+          tokens.push({ type: TokenType.DOT, value: '.', line: lineNum, col: startCol });
+          col++;
+          continue;
+        }
       }
 
       // Equals =
@@ -149,16 +153,25 @@ export function tokenize(source: string): LexResult {
         continue;
       }
 
-      // Number, Value+Unit, or Part Identifier starting with digit (e.g. 9V, 470Ω, 100uF, 1N4148, 2N2222)
-      if (/[0-9]/.test(line[col])) {
+      // Number, Value+Unit, or Part Identifier starting with digit or decimal point (e.g. 9V, 470Ω, 2.2uF, .5V, 1N4148, 2N2222)
+      if (/[0-9]/.test(line[col]) || (line[col] === '.' && col + 1 < line.length && /[0-9]/.test(line[col + 1]))) {
         let text = '';
-        while (col < line.length && /[0-9a-zA-Z_Ωµ]/.test(line[col])) {
-          text += line[col];
-          col++;
+        let hasDot = false;
+        while (col < line.length) {
+          if (/[0-9a-zA-Z_Ωµ]/.test(line[col])) {
+            text += line[col];
+            col++;
+          } else if (line[col] === '.' && !hasDot && col + 1 < line.length && /[0-9]/.test(line[col + 1])) {
+            hasDot = true;
+            text += '.';
+            col++;
+          } else {
+            break;
+          }
         }
         if (VALUE_UNIT_REGEX.test(text)) {
           tokens.push({ type: TokenType.VALUE_WITH_UNIT, value: text, line: lineNum, col: startCol });
-        } else if (/^[0-9]+(\.[0-9]+)?$/.test(text)) {
+        } else if (/^[0-9]+(\.[0-9]+)?$/.test(text) || /^\.[0-9]+$/.test(text)) {
           tokens.push({ type: TokenType.NUMBER, value: text, line: lineNum, col: startCol });
         } else {
           // Part numbers or identifiers starting with digit (e.g. 1N4148, 1N4007, 2N2222, 74HC595)
