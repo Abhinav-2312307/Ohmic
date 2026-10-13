@@ -184,6 +184,42 @@ export function decompile(
         line = `seg7 ${comp.id}`;
         break;
 
+      case 'DIODE_1N4148':
+        line = `diode ${padRight(comp.id, 8)} 1n4148`;
+        break;
+
+      case 'DIODE_1N4007':
+        line = `diode ${padRight(comp.id, 8)} 1n4007`;
+        break;
+
+      case 'TRANSISTOR_NPN_BC547':
+        line = `npn  ${padRight(comp.id, 8)} bc547`;
+        break;
+
+      case 'TRANSISTOR_NPN_2N2222':
+        line = `npn  ${padRight(comp.id, 8)} 2n2222`;
+        break;
+
+      case 'TRANSISTOR_PNP_BC557':
+        line = `pnp  ${padRight(comp.id, 8)} bc557`;
+        break;
+
+      case 'MOSFET_N_LOGIC':
+        line = `mosfet ${padRight(comp.id, 8)} irlz44n`;
+        break;
+
+      case 'LDR_PHOTORESISTOR':
+        line = `ldr  ${padRight(comp.id, 8)} cds`;
+        break;
+
+      case 'DIP8_LM358':
+        line = `lm358 ${comp.id}`;
+        break;
+
+      case 'POWER_MODULE_MB102':
+        line = `mb102 ${padRight(comp.id, 8)} 5V`;
+        break;
+
       default:
         line = `# Unknown component type: ${comp.type} ${comp.id}`;
     }

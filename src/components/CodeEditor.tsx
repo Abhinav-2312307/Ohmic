@@ -34,6 +34,7 @@ import {
 } from '../dsl';
 import { CircuitComponent, JumperWire } from '../engine/componentTypes';
 import { audioEngine } from '../engine/audioEngine';
+import GuideBookModal from './GuideBookModal';
 
 interface CodeEditorProps {
   isOpen: boolean;
@@ -206,6 +207,123 @@ probe black TOP_NEG_18
 @sim on
 `,
   },
+  {
+    name: '6. NE555 Astable Flasher',
+    desc: 'NE555 Timer IC driving 1Hz astable square wave to red LED',
+    code: `# ── NE555 Astable Flasher ──────────────────────────
+@circuit "NE555 1Hz Flasher"
+@description "Classic astable multivibrator producing square wave flashes"
+@author "Ohmic Laboratory"
+@version "2.0"
+@board full_830
+@temp 25
+@sim on
+
+# Power & Passives
+bat    BAT1   9V
+res    R1     10k       maxP=0.25W
+res    R2     47k       maxP=0.25W
+res    R_LED  330       maxP=0.25W
+cap    C1     10uF      electrolytic
+cap    C2     0.01uF    ceramic
+ic555  U1
+led    LED1   red       Vf=1.9V
+
+# Placements
+place BAT1  bench
+place U1    E20
+place R1    A27-A28
+place R2    B27-B26
+place C1    E26-E21
+place C2    E25-E21
+place R_LED E23-E18
+place LED1  D18-D17
+
+# Power Rails
+wire BAT1.pos -> TOP_POS_1   red
+wire BAT1.neg -> TOP_NEG_1   black
+
+# 555 Pin Wiring
+wire TOP_POS_1 -> E28        red     # Pin 8 (VCC)
+wire TOP_POS_1 -> E24        red     # Pin 4 (RESET)
+wire TOP_NEG_1 -> E21        black   # Pin 1 (GND)
+wire E22 -> E26              blue    # Pin 2 (TRIG) to Pin 6 (THRES)
+wire D17 -> TOP_NEG_1        black   # LED Cathode to GND
+
+# Probing
+probe red   E23
+probe black E21
+@probe_mode FREQUENCY
+`,
+  },
+  {
+    name: '7. DC Motor Transistor Driver',
+    desc: '2N2222 NPN transistor switching TT DC motor with flyback diode',
+    code: `# ── 2N2222 Motor Driver Switch ───────────────────────
+@circuit "2N2222 Motor Driver Switch"
+@description "Logic switch driving high-current DC motor with back-EMF protection"
+@author "Ohmic Laboratory"
+@version "2.0"
+@board full_830
+@temp 25
+@sim on
+
+bat    BAT1   9V
+res    R_BASE 1k
+sw     SW1    tactile
+diode  D_FLY  1N4007
+npn    Q1     2N2222    hfe=150
+motor  M1     200
+
+place BAT1  bench
+place M1    bench
+place SW1   E15-F15
+place R_BASE A15-A20
+place Q1    E20:E21:E22
+place D_FLY F21-F22
+
+wire BAT1.pos -> TOP_POS_1   red
+wire BAT1.neg -> TOP_NEG_1   black
+wire TOP_POS_1 -> B15        red
+wire B20      -> B21         orange
+wire TOP_NEG_1 -> B20        black
+wire M1.pos   -> TOP_POS_1   red
+wire M1.neg   -> F22         blue
+wire F21      -> TOP_POS_1   red
+`,
+  },
+  {
+    name: '8. Ultrasonic Distance & OLED',
+    desc: 'HC-SR04 ultrasonic distance sensor and SSD1306 OLED display',
+    code: `# ── Sonar Radar Monitor ─────────────────────────────
+@circuit "Sonar Radar Monitor"
+@description "HC-SR04 sonar module feeding graphical SSD1306 OLED"
+@author "Ohmic Laboratory"
+@version "2.0"
+@board full_830
+@temp 25
+@sim on
+
+bat     BAT1   9V
+mcu     MCU1   nano
+sensor  US1    hcsr04
+disp    OLED1  oled
+
+place BAT1  bench
+place MCU1  E10
+place US1   B30:B31:B32:B33
+place OLED1 B40:B41:B42:B43
+
+wire BAT1.pos -> MCU1.vin    red
+wire BAT1.neg -> MCU1.gnd    black
+wire MCU1.5v  -> US1.vcc     red
+wire MCU1.gnd -> US1.gnd     black
+wire MCU1.5v  -> OLED1.vcc   red
+wire MCU1.gnd -> OLED1.gnd   black
+
+set US1.distance 35
+`,
+  },
 ];
 
 export default function CodeEditor({
@@ -224,6 +342,7 @@ export default function CodeEditor({
   const [statusType, setStatusType] = useState<'idle' | 'success' | 'error'>('idle');
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [showCheatsheet, setShowCheatsheet] = useState<boolean>(false);
+  const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
 
@@ -544,6 +663,16 @@ export default function CodeEditor({
             <HelpCircle className="w-3.5 h-3.5" />
           </button>
 
+          {/* Syntax Guide Book Modal */}
+          <button
+            onClick={() => setShowGuideModal(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono text-cyan-300 hover:text-cyan-200 bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/30 transition-all shadow-sm"
+            title="Open Complete OhmScript Syntax Guide Book"
+          >
+            <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline font-semibold">Guide Book</span>
+          </button>
+
           {/* Copy */}
           <button
             onClick={handleCopy}
@@ -601,32 +730,52 @@ export default function CodeEditor({
 
       {/* ── Syntax Cheatsheet Panel (Collapsible) ───────────────────────────── */}
       {showCheatsheet && (
-        <div className="bg-zinc-950/90 border-b border-white/[0.08] p-3 text-[11px] font-mono text-zinc-300 max-h-48 overflow-y-auto">
+        <div className="bg-zinc-950/95 border-b border-white/[0.08] p-3 text-[11px] font-mono text-zinc-300 max-h-56 overflow-y-auto">
           <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-white/[0.06]">
-            <span className="text-cyan-400 font-bold tracking-wide">OhmScript v1.0 Syntax Cheatsheet</span>
-            <span className="text-zinc-500 text-[10px]">Directives, Components, Wires & State</span>
+            <div className="flex items-center gap-2">
+              <span className="text-cyan-400 font-bold tracking-wide">OhmScript v2.0 Syntax Quick Reference</span>
+              <span className="text-zinc-500 text-[10px]">34 Supported Hardware Components</span>
+            </div>
+            <button
+              onClick={() => setShowGuideModal(true)}
+              className="text-[10px] text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-1 font-semibold"
+            >
+              <BookOpen className="w-3 h-3" /> Complete Syntax Guide Book &rarr;
+            </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-[10px] leading-relaxed">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-2 text-[10px] leading-relaxed">
             <div>
-              <div className="text-amber-400 font-semibold mb-0.5">Component Declarations:</div>
-              <div className="text-zinc-400">
-                <code className="text-zinc-200 font-bold">bat BAT1 9V</code> — 9V Alkaline battery<br />
-                <code className="text-zinc-200 font-bold">res R1 470 maxP=0.25W</code> — Resistor with rating<br />
-                <code className="text-zinc-200 font-bold">led LED1 red Vf=1.9V</code> — Red/Green/Blue/Yellow LED<br />
-                <code className="text-zinc-200 font-bold">pot POT1 10k wiper=0.5</code> — 10kΩ Potentiometer<br />
-                <code className="text-zinc-200 font-bold">spk SPK1 8 maxP=15W</code> — 8Ω Breadboard speaker<br />
-                <code className="text-zinc-200 font-bold">bulb BULB1 25</code> — 25Ω Incandescent bulb
+              <div className="text-amber-400 font-semibold mb-0.5">Passives & Sources:</div>
+              <div className="text-zinc-400 space-y-0.5">
+                <div><code className="text-zinc-200 font-bold">bat BAT1 9V</code> — 9V Alkaline / 4AA</div>
+                <div><code className="text-zinc-200 font-bold">mb102 MB1 5V</code> — MB102 Power module</div>
+                <div><code className="text-zinc-200 font-bold">res R1 10k maxP=0.25W</code> — 1/4W resistor</div>
+                <div><code className="text-zinc-200 font-bold">cap C1 10uF electrolytic</code> — Capacitor</div>
+                <div><code className="text-zinc-200 font-bold">pot POT1 10k wiper=0.5</code> — Potentiometer</div>
+                <div><code className="text-zinc-200 font-bold">sw SW1 tactile|toggle|slide</code> — Switches</div>
               </div>
             </div>
             <div>
-              <div className="text-emerald-400 font-semibold mb-0.5">Placements & Wiring:</div>
-              <div className="text-zinc-400">
-                <code className="text-zinc-200 font-bold">place BAT1 bench</code> — Place on ESD bench mat<br />
-                <code className="text-zinc-200 font-bold">place R1 E15-E19</code> — 2-pin placement across holes<br />
-                <code className="text-zinc-200 font-bold">place POT1 E10:E11:E12</code> — 3-pin placement<br />
-                <code className="text-zinc-200 font-bold">wire BAT1.pos -&gt; TOP_POS_10 red</code> — Wire from terminal<br />
-                <code className="text-zinc-200 font-bold">wire A15 -&gt; TOP_NEG_15 black</code> — Tie hole to rail<br />
-                <code className="text-zinc-200 font-bold">set POT1.wiper 0.75</code> — Live wiper control
+              <div className="text-purple-400 font-semibold mb-0.5">Semiconductors & ICs:</div>
+              <div className="text-zinc-400 space-y-0.5">
+                <div><code className="text-zinc-200 font-bold">led LED1 red|rgb Vf=1.9V</code> — 5mm / RGB LED</div>
+                <div><code className="text-zinc-200 font-bold">diode D1 1N4148|1N4007</code> — Diodes</div>
+                <div><code className="text-zinc-200 font-bold">npn Q1 BC547|2N2222</code> — BJT (pnp=BC557)</div>
+                <div><code className="text-zinc-200 font-bold">mosfet M1 IRLZ44N</code> — Logic N-MOSFET</div>
+                <div><code className="text-zinc-200 font-bold">ic555 U1</code> — NE555 Timer DIP-8</div>
+                <div><code className="text-zinc-200 font-bold">ic U1 cd4017|74hc595|lm393</code> — ICs</div>
+              </div>
+            </div>
+            <div>
+              <div className="text-emerald-400 font-semibold mb-0.5">Sensors, Motors & MCUs:</div>
+              <div className="text-zinc-400 space-y-0.5">
+                <div><code className="text-zinc-200 font-bold">sensor US1 hcsr04|dht22|pir</code> — Sensors</div>
+                <div><code className="text-zinc-200 font-bold">buzzer BZ1 active|passive</code> — Buzzers</div>
+                <div><code className="text-zinc-200 font-bold">servo SRV1 angle=90</code> — SG90 Micro servo</div>
+                <div><code className="text-zinc-200 font-bold">motor M1 200</code> — TT DC gear motor</div>
+                <div><code className="text-zinc-200 font-bold">relay RL1 5V</code> — Opto-isolated relay</div>
+                <div><code className="text-zinc-200 font-bold">disp OLED1 oled|lcd</code> — I2C Displays</div>
+                <div><code className="text-zinc-200 font-bold">mcu MCU1 nano|esp32|uno</code> — Dev Boards</div>
               </div>
             </div>
           </div>
@@ -731,6 +880,16 @@ export default function CodeEditor({
           </button>
         </div>
       </div>
+
+      {/* ── Syntax Guide Book Modal ────────────────────────────────────────── */}
+      <GuideBookModal
+        isOpen={showGuideModal}
+        onClose={() => setShowGuideModal(false)}
+        onInsertCode={(newCode) => {
+          setCode(newCode);
+          setShowGuideModal(false);
+        }}
+      />
     </div>
   );
 }
