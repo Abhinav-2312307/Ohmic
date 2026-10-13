@@ -129,6 +129,9 @@ export class Parser {
       TokenType.KW_IND, TokenType.KW_IC555, TokenType.KW_SEG7,
       TokenType.KW_DIODE, TokenType.KW_NPN, TokenType.KW_PNP,
       TokenType.KW_MOSFET, TokenType.KW_LDR, TokenType.KW_LM358, TokenType.KW_MB102,
+      TokenType.KW_BUZZER, TokenType.KW_RELAY, TokenType.KW_SERVO, TokenType.KW_MOTOR,
+      TokenType.KW_SENSOR, TokenType.KW_DISP, TokenType.KW_MCU, TokenType.KW_IC,
+      TokenType.KW_KEYPAD, TokenType.KW_ENCODER,
     ].includes(type);
   }
 
@@ -166,6 +169,16 @@ export class Parser {
       [TokenType.KW_LDR]: 'ldr',
       [TokenType.KW_LM358]: 'lm358',
       [TokenType.KW_MB102]: 'mb102',
+      [TokenType.KW_BUZZER]: 'buzzer',
+      [TokenType.KW_RELAY]: 'relay',
+      [TokenType.KW_SERVO]: 'servo',
+      [TokenType.KW_MOTOR]: 'motor',
+      [TokenType.KW_SENSOR]: 'sensor',
+      [TokenType.KW_DISP]: 'disp',
+      [TokenType.KW_MCU]: 'mcu',
+      [TokenType.KW_IC]: 'ic',
+      [TokenType.KW_KEYPAD]: 'keypad',
+      [TokenType.KW_ENCODER]: 'encoder',
     };
     return map[type] || 'unknown';
   }

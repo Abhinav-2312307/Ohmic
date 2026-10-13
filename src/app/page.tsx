@@ -35,6 +35,7 @@ import {
   nudgeComponent,
   updateWiresForComponent,
   getComponentDefaultElevation,
+  isBenchComponent,
 } from '../engine/breadboardModel';
 import { audioEngine } from '../engine/audioEngine';
 import ControlsGuideModal from '../components/ControlsGuideModal';
@@ -370,8 +371,27 @@ export default function OhmicWorkbenchPage() {
         const lastPos = getHolePosition(holeIds[holeIds.length - 1], components);
         x = firstPos && lastPos ? (firstPos[0] + lastPos[0]) / 2 : 0;
         z = firstPos && lastPos ? (firstPos[1] + lastPos[1]) / 2 : 0;
-      } else if (type === 'BATTERY_9V' || type === 'DC_SOURCE' || type === 'SPEAKER') {
-        x = type === 'SPEAKER' ? 0.065 : type === 'DC_SOURCE' ? 0.055 : -0.06;
+      } else if (isBenchComponent(type)) {
+        x =
+          type === 'SPEAKER'
+            ? 0.065
+            : type === 'DC_SOURCE'
+            ? 0.055
+            : type === 'BATTERY_HOLDER_4AA'
+            ? -0.075
+            : type === 'DC_GEAR_MOTOR'
+            ? 0.08
+            : type === 'SERVO_SG90'
+            ? 0.07
+            : type === 'RELAY_MODULE_5V'
+            ? -0.065
+            : type === 'KEYPAD_4X4'
+            ? 0.08
+            : type === 'ARDUINO_UNO_R3'
+            ? -0.08
+            : type === 'TOOL_SOLDERING_IRON'
+            ? 0.09
+            : -0.06;
         z = 0.055;
         y = 0.0;
       }
@@ -614,15 +634,394 @@ export default function OhmicWorkbenchPage() {
           ];
           break;
 
-        case 'POWER_MODULE_MB102':
-          name = 'MB102 Power Supply Module';
+        case 'BATTERY_HOLDER_4AA':
+          name = '4×AA Battery Holder (6V)';
           unit = 'V';
           pins = [
-            { id: 'top_pos', name: 'Top VCC (+)', relativePos: [0, 0.03, 0], connectedHoleId: 'TOP_POS_1' },
-            { id: 'top_neg', name: 'Top GND (-)', relativePos: [0, 0.025, 0], connectedHoleId: 'TOP_NEG_1' },
-            { id: 'bot_pos', name: 'Bot VCC (+)', relativePos: [0, -0.025, 0], connectedHoleId: 'BOT_POS_1' },
-            { id: 'bot_neg', name: 'Bot GND (-)', relativePos: [0, -0.03, 0], connectedHoleId: 'BOT_NEG_1' },
+            { id: 'pos', name: '+ (6V)', relativePos: [0.0064, 0, 0.018], connectedHoleId: `${id}:pos` },
+            { id: 'neg', name: '- (GND)', relativePos: [-0.0064, 0, 0.018], connectedHoleId: `${id}:neg` },
           ];
+          break;
+
+        case 'CAPACITOR_FILM':
+          name = `${defaultValue}µF Film Capacitor`;
+          unit = 'µF';
+          pins = [
+            { id: 'cp1', name: 'Pin 1', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'cp2', name: 'Pin 2', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[1] },
+          ];
+          break;
+
+        case 'LED_RGB':
+          name = '5mm RGB LED (Common Cathode)';
+          unit = 'RGB';
+          pins = [
+            { id: 'r', name: 'RED Anode', relativePos: [-0.00381, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'c', name: 'CATHODE (GND)', relativePos: [-0.00127, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'g', name: 'GREEN Anode', relativePos: [0.00127, 0, 0], connectedHoleId: holeIds[2] },
+            { id: 'b', name: 'BLUE Anode', relativePos: [0.00381, 0, 0], connectedHoleId: holeIds[3] },
+          ];
+          break;
+
+        case 'BUZZER_ACTIVE':
+          name = 'Active Buzzer (5V, 2.4kHz)';
+          unit = 'Hz';
+          pins = [
+            { id: 'pos', name: '+ (VCC)', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'neg', name: '- (GND)', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[1] },
+          ];
+          break;
+
+        case 'BUZZER_PASSIVE':
+          name = 'Passive Piezo Buzzer';
+          unit = 'Ω';
+          pins = [
+            { id: 'pos', name: 'Pin 1 (+)', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'neg', name: 'Pin 2 (-)', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[1] },
+          ];
+          break;
+
+        case 'SWITCH_SLIDE':
+          name = 'SPDT Slide Switch';
+          unit = 'sw';
+          pins = [
+            { id: 'sw1', name: 'Terminal 1', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'com', name: 'COMMON', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'sw2', name: 'Terminal 2', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ];
+          break;
+
+        case 'DIP8_LM393':
+          name = 'LM393 Dual Comparator';
+          unit = 'IC';
+          pins = [
+            { id: 'p1', name: 'OUT1 (1)', relativePos: [-0.00381, -0.00381, 0], connectedHoleId: holeIds[0] },
+            { id: 'p2', name: 'IN1- (2)', relativePos: [-0.00127, -0.00381, 0], connectedHoleId: holeIds[1] },
+            { id: 'p3', name: 'IN1+ (3)', relativePos: [0.00127, -0.00381, 0], connectedHoleId: holeIds[2] },
+            { id: 'p4', name: 'GND (4)', relativePos: [0.00381, -0.00381, 0], connectedHoleId: holeIds[3] },
+            { id: 'p5', name: 'IN2+ (5)', relativePos: [-0.00381, 0.00381, 0], connectedHoleId: holeIds[4] },
+            { id: 'p6', name: 'IN2- (6)', relativePos: [-0.00127, 0.00381, 0], connectedHoleId: holeIds[5] },
+            { id: 'p7', name: 'OUT2 (7)', relativePos: [0.00127, 0.00381, 0], connectedHoleId: holeIds[6] },
+            { id: 'p8', name: 'VCC (8)', relativePos: [0.00381, 0.00381, 0], connectedHoleId: holeIds[7] },
+          ];
+          break;
+
+        case 'DIP16_CD4017':
+          name = 'CD4017 Decade Counter IC';
+          unit = 'IC';
+          pins = [
+            { id: 'p1', name: 'Q5 (1)', relativePos: [-0.00889, -0.00381, 0], connectedHoleId: holeIds[0] },
+            { id: 'p2', name: 'Q1 (2)', relativePos: [-0.00635, -0.00381, 0], connectedHoleId: holeIds[1] },
+            { id: 'p3', name: 'Q0 (3)', relativePos: [-0.00381, -0.00381, 0], connectedHoleId: holeIds[2] },
+            { id: 'p4', name: 'Q2 (4)', relativePos: [-0.00127, -0.00381, 0], connectedHoleId: holeIds[3] },
+            { id: 'p5', name: 'Q6 (5)', relativePos: [0.00127, -0.00381, 0], connectedHoleId: holeIds[4] },
+            { id: 'p6', name: 'Q7 (6)', relativePos: [0.00381, -0.00381, 0], connectedHoleId: holeIds[5] },
+            { id: 'p7', name: 'Q3 (7)', relativePos: [0.00635, -0.00381, 0], connectedHoleId: holeIds[6] },
+            { id: 'p8', name: 'GND/VSS (8)', relativePos: [0.00889, -0.00381, 0], connectedHoleId: holeIds[7] },
+            { id: 'p9', name: 'Q8 (9)', relativePos: [-0.00889, 0.00381, 0], connectedHoleId: holeIds[8] },
+            { id: 'p10', name: 'Q4 (10)', relativePos: [-0.00635, 0.00381, 0], connectedHoleId: holeIds[9] },
+            { id: 'p11', name: 'Q9 (11)', relativePos: [-0.00381, 0.00381, 0], connectedHoleId: holeIds[10] },
+            { id: 'p12', name: 'CO Carry (12)', relativePos: [-0.00127, 0.00381, 0], connectedHoleId: holeIds[11] },
+            { id: 'p13', name: 'CE Inh (13)', relativePos: [0.00127, 0.00381, 0], connectedHoleId: holeIds[12] },
+            { id: 'p14', name: 'CLK (14)', relativePos: [0.00381, 0.00381, 0], connectedHoleId: holeIds[13] },
+            { id: 'p15', name: 'RESET (15)', relativePos: [0.00635, 0.00381, 0], connectedHoleId: holeIds[14] },
+            { id: 'p16', name: 'VDD (16)', relativePos: [0.00889, 0.00381, 0], connectedHoleId: holeIds[15] },
+          ];
+          break;
+
+        case 'DIP16_74HC595':
+          name = '74HC595 8-Bit Shift Register';
+          unit = 'IC';
+          pins = [
+            { id: 'p1', name: 'QB (1)', relativePos: [-0.00889, -0.00381, 0], connectedHoleId: holeIds[0] },
+            { id: 'p2', name: 'QC (2)', relativePos: [-0.00635, -0.00381, 0], connectedHoleId: holeIds[1] },
+            { id: 'p3', name: 'QD (3)', relativePos: [-0.00381, -0.00381, 0], connectedHoleId: holeIds[2] },
+            { id: 'p4', name: 'QE (4)', relativePos: [-0.00127, -0.00381, 0], connectedHoleId: holeIds[3] },
+            { id: 'p5', name: 'QF (5)', relativePos: [0.00127, -0.00381, 0], connectedHoleId: holeIds[4] },
+            { id: 'p6', name: 'QG (6)', relativePos: [0.00381, -0.00381, 0], connectedHoleId: holeIds[5] },
+            { id: 'p7', name: 'QH (7)', relativePos: [0.00635, -0.00381, 0], connectedHoleId: holeIds[6] },
+            { id: 'p8', name: 'GND (8)', relativePos: [0.00889, -0.00381, 0], connectedHoleId: holeIds[7] },
+            { id: 'p9', name: "QH' (9)", relativePos: [-0.00889, 0.00381, 0], connectedHoleId: holeIds[8] },
+            { id: 'p10', name: 'SRCLR (10)', relativePos: [-0.00635, 0.00381, 0], connectedHoleId: holeIds[9] },
+            { id: 'p11', name: 'SRCLK (11)', relativePos: [-0.00381, 0.00381, 0], connectedHoleId: holeIds[10] },
+            { id: 'p12', name: 'RCLK (12)', relativePos: [-0.00127, 0.00381, 0], connectedHoleId: holeIds[11] },
+            { id: 'p13', name: 'OE (13)', relativePos: [0.00127, 0.00381, 0], connectedHoleId: holeIds[12] },
+            { id: 'p14', name: 'SER (14)', relativePos: [0.00381, 0.00381, 0], connectedHoleId: holeIds[13] },
+            { id: 'p15', name: 'QA (15)', relativePos: [0.00635, 0.00381, 0], connectedHoleId: holeIds[14] },
+            { id: 'p16', name: 'VCC (16)', relativePos: [0.00889, 0.00381, 0], connectedHoleId: holeIds[15] },
+          ];
+          break;
+
+        case 'DIP16_L293D':
+          name = 'L293D Dual H-Bridge Motor Driver';
+          unit = 'IC';
+          pins = [
+            { id: 'p1', name: '1,2EN (1)', relativePos: [-0.00889, -0.00381, 0], connectedHoleId: holeIds[0] },
+            { id: 'p2', name: '1A (2)', relativePos: [-0.00635, -0.00381, 0], connectedHoleId: holeIds[1] },
+            { id: 'p3', name: '1Y (3)', relativePos: [-0.00381, -0.00381, 0], connectedHoleId: holeIds[2] },
+            { id: 'p4', name: 'GND (4)', relativePos: [-0.00127, -0.00381, 0], connectedHoleId: holeIds[3] },
+            { id: 'p5', name: 'GND (5)', relativePos: [0.00127, -0.00381, 0], connectedHoleId: holeIds[4] },
+            { id: 'p6', name: '2Y (6)', relativePos: [0.00381, -0.00381, 0], connectedHoleId: holeIds[5] },
+            { id: 'p7', name: '2A (7)', relativePos: [0.00635, -0.00381, 0], connectedHoleId: holeIds[6] },
+            { id: 'p8', name: 'VCC2 Motor (8)', relativePos: [0.00889, -0.00381, 0], connectedHoleId: holeIds[7] },
+            { id: 'p9', name: '3,4EN (9)', relativePos: [-0.00889, 0.00381, 0], connectedHoleId: holeIds[8] },
+            { id: 'p10', name: '3A (10)', relativePos: [-0.00635, 0.00381, 0], connectedHoleId: holeIds[9] },
+            { id: 'p11', name: '3Y (11)', relativePos: [-0.00381, 0.00381, 0], connectedHoleId: holeIds[10] },
+            { id: 'p12', name: 'GND (12)', relativePos: [-0.00127, 0.00381, 0], connectedHoleId: holeIds[11] },
+            { id: 'p13', name: 'GND (13)', relativePos: [0.00127, 0.00381, 0], connectedHoleId: holeIds[12] },
+            { id: 'p14', name: '4Y (14)', relativePos: [0.00381, 0.00381, 0], connectedHoleId: holeIds[13] },
+            { id: 'p15', name: '4A (15)', relativePos: [0.00635, 0.00381, 0], connectedHoleId: holeIds[14] },
+            { id: 'p16', name: 'VCC1 Logic (16)', relativePos: [0.00889, 0.00381, 0], connectedHoleId: holeIds[15] },
+          ];
+          break;
+
+        case 'MODULE_TB6612FNG':
+          name = 'TB6612FNG Dual Motor Driver';
+          unit = 'MOD';
+          pins = holeIds.map((hid, idx) => ({
+            id: `p${idx + 1}`,
+            name: `Pin ${idx + 1}`,
+            relativePos: [(idx % 8 - 3.5) * 0.00254, idx < 8 ? -0.00381 : 0.00381, 0] as [number, number, number],
+            connectedHoleId: hid,
+          }));
+          break;
+
+        case 'RELAY_MODULE_5V':
+          name = '5V 1-Channel Relay Module';
+          unit = 'RELAY';
+          pins = [
+            { id: 'vcc', name: 'VCC (5V)', relativePos: [-0.007, 0, 0.016], connectedHoleId: `${id}:vcc` },
+            { id: 'gnd', name: 'GND', relativePos: [-0.0035, 0, 0.016], connectedHoleId: `${id}:gnd` },
+            { id: 'in', name: 'IN', relativePos: [0, 0, 0.016], connectedHoleId: `${id}:in` },
+            { id: 'no', name: 'NO', relativePos: [0.0035, 0, 0.016], connectedHoleId: `${id}:no` },
+            { id: 'com', name: 'COM', relativePos: [0.007, 0, 0.016], connectedHoleId: `${id}:com` },
+            { id: 'nc', name: 'NC', relativePos: [0.0105, 0, 0.016], connectedHoleId: `${id}:nc` },
+          ];
+          break;
+
+        case 'SERVO_SG90':
+          name = 'SG90 Micro Servo (9g)';
+          unit = 'deg';
+          pins = [
+            { id: 'gnd', name: 'GND (Brown)', relativePos: [-0.00254, 0, 0.018], connectedHoleId: `${id}:gnd` },
+            { id: 'vcc', name: 'VCC (Red, 5V)', relativePos: [0, 0, 0.018], connectedHoleId: `${id}:vcc` },
+            { id: 'sig', name: 'PWM SIG (Orange)', relativePos: [0.00254, 0, 0.018], connectedHoleId: `${id}:sig` },
+          ];
+          break;
+
+        case 'DC_GEAR_MOTOR':
+          name = 'TT DC Gearbox Motor + Wheel';
+          unit = 'RPM';
+          pins = [
+            { id: 'pos', name: 'Motor +', relativePos: [-0.009, 0, 0.014], connectedHoleId: `${id}:pos` },
+            { id: 'neg', name: 'Motor -', relativePos: [0.009, 0, 0.014], connectedHoleId: `${id}:neg` },
+          ];
+          break;
+
+        case 'WS2812B_STRIP':
+          name = 'WS2812B Addressable RGB LED (8-LED Strip)';
+          unit = 'RGB';
+          pins = [
+            { id: 'din', name: 'DIN (Data)', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'vcc', name: '+5V Power', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'gnd', name: 'GND', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ];
+          break;
+
+        case 'MOSFET_DRIVER_MODULE':
+          name = 'High-Power MOSFET Driver Switch Module';
+          unit = 'PWM';
+          pins = [
+            { id: 'sig', name: 'PWM / TRIG', relativePos: [-0.00381, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'gnd', name: 'GND', relativePos: [-0.00127, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'vin', name: 'VIN+ (Power)', relativePos: [0.00127, 0, 0], connectedHoleId: holeIds[2] },
+            { id: 'vout', name: 'LOAD- (Switch)', relativePos: [0.00381, 0, 0], connectedHoleId: holeIds[3] },
+          ];
+          break;
+
+        case 'ROTARY_ENCODER_KY040':
+          name = 'KY-040 Rotary Encoder Module';
+          unit = 'PULSE';
+          pins = [
+            { id: 'clk', name: 'CLK', relativePos: [-0.00508, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'dt', name: 'DT', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'sw', name: 'SW (Pushbutton)', relativePos: [0, 0, 0], connectedHoleId: holeIds[2] },
+            { id: 'vcc', name: '+ (5V)', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[3] },
+            { id: 'gnd', name: 'GND', relativePos: [0.00508, 0, 0], connectedHoleId: holeIds[4] },
+          ];
+          break;
+
+        case 'KEYPAD_4X4':
+          name = '4×4 Matrix Keypad (16-Key)';
+          unit = 'KEY';
+          pins = ['r1', 'r2', 'r3', 'r4', 'c1', 'c2', 'c3', 'c4'].map((col, idx) => ({
+            id: col,
+            name: `Row/Col ${col.toUpperCase()}`,
+            relativePos: [(idx - 3.5) * 0.0035, 0, 0.006] as [number, number, number],
+            connectedHoleId: `${id}:${col}`,
+          }));
+          break;
+
+        case 'REGULATOR_AMS1117_3V3':
+          name = 'AMS1117-3.3V LDO Voltage Regulator';
+          unit = 'V';
+          pins = [
+            { id: 'gnd', name: 'GND (1)', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'out', name: 'VOUT 3.3V (2)', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'in', name: 'VIN (3)', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ];
+          break;
+
+        case 'SCREW_TERMINAL_2P':
+          name = '2-Pin 5mm Screw Terminal Block';
+          unit = 'TERM';
+          pins = [
+            { id: 't1', name: 'Terminal 1', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 't2', name: 'Terminal 2', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[1] },
+          ];
+          break;
+
+        case 'IC_SOCKET_DIP':
+          name = '16-Pin DIP IC Socket';
+          unit = 'DIP';
+          pins = holeIds.map((hid, idx) => ({
+            id: `p${idx + 1}`,
+            name: `Socket Pin ${idx + 1}`,
+            relativePos: [(idx % 8 - 3.5) * 0.00254, idx < 8 ? -0.00381 : 0.00381, 0] as [number, number, number],
+            connectedHoleId: hid,
+          }));
+          break;
+
+        case 'SENSOR_HC_SR04':
+          name = 'HC-SR04 Ultrasonic Distance Sensor';
+          unit = 'cm';
+          pins = [
+            { id: 'vcc', name: 'VCC (5V)', relativePos: [-0.00381, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'trig', name: 'TRIG', relativePos: [-0.00127, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'echo', name: 'ECHO', relativePos: [0.00127, 0, 0], connectedHoleId: holeIds[2] },
+            { id: 'gnd', name: 'GND', relativePos: [0.00381, 0, 0], connectedHoleId: holeIds[3] },
+          ];
+          break;
+
+        case 'SENSOR_DHT22':
+          name = 'DHT22 / AM2302 Temp & Humidity Sensor';
+          unit = '°C';
+          pins = [
+            { id: 'vcc', name: 'VCC (3.3-5V)', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'data', name: 'DATA Out', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'gnd', name: 'GND', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ];
+          break;
+
+        case 'SENSOR_PIR':
+          name = 'HC-SR501 PIR Motion Sensor';
+          unit = 'PIR';
+          pins = [
+            { id: 'vcc', name: 'VCC (5V)', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'out', name: 'OUT (3.3V TTL)', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'gnd', name: 'GND', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ];
+          break;
+
+        case 'SENSOR_SOUND':
+          name = 'Microphone Sound Sensor Module';
+          unit = 'dB';
+          pins = [
+            { id: 'vcc', name: 'VCC', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'out', name: 'OUT (Analog)', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'gnd', name: 'GND', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ];
+          break;
+
+        case 'SENSOR_SOIL':
+          name = 'Capacitive Soil Moisture Sensor';
+          unit = '%';
+          pins = [
+            { id: 'vcc', name: 'VCC', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'sig', name: 'SIG (Analog Out)', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'gnd', name: 'GND', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ];
+          break;
+
+        case 'SENSOR_IR_RECEIVER':
+          name = 'VS1838B 38kHz IR Receiver Module';
+          unit = 'IR';
+          pins = [
+            { id: 'out', name: 'DATA OUT', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'gnd', name: 'GND', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'vcc', name: 'VCC (5V)', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ];
+          break;
+
+        case 'SENSOR_HALL':
+          name = 'A3144 Hall Effect Magnetic Sensor';
+          unit = 'MAG';
+          pins = [
+            { id: 'vcc', name: 'VCC (5V)', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'gnd', name: 'GND', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'out', name: 'OUT', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ];
+          break;
+
+        case 'DISPLAY_OLED_I2C':
+          name = '0.96" SSD1306 128×64 I2C OLED Display';
+          unit = 'OLED';
+          pins = [
+            { id: 'gnd', name: 'GND', relativePos: [-0.00381, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'vcc', name: 'VCC (3.3-5V)', relativePos: [-0.00127, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'scl', name: 'SCL (Clock)', relativePos: [0.00127, 0, 0], connectedHoleId: holeIds[2] },
+            { id: 'sda', name: 'SDA (Data)', relativePos: [0.00381, 0, 0], connectedHoleId: holeIds[3] },
+          ];
+          break;
+
+        case 'DISPLAY_LCD_1602_I2C':
+          name = '16×2 Character LCD (I2C Backpack)';
+          unit = 'LCD';
+          pins = [
+            { id: 'gnd', name: 'GND', relativePos: [-0.00381, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'vcc', name: 'VCC (5V)', relativePos: [-0.00127, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'sda', name: 'SDA (Data)', relativePos: [0.00127, 0, 0], connectedHoleId: holeIds[2] },
+            { id: 'scl', name: 'SCL (Clock)', relativePos: [0.00381, 0, 0], connectedHoleId: holeIds[3] },
+          ];
+          break;
+
+        case 'ARDUINO_NANO':
+          name = 'Arduino Nano V3 (ATmega328P)';
+          unit = 'MCU';
+          pins = holeIds.map((hid, idx) => ({
+            id: `pin_${idx + 1}`,
+            name: idx === 11 ? '5V Output' : idx === 3 ? 'GND' : idx === 28 ? 'GND' : `DIP Pin ${idx + 1}`,
+            relativePos: [(idx % 15 - 7) * 0.00254, idx < 15 ? -0.00381 : 0.00381, 0] as [number, number, number],
+            connectedHoleId: hid,
+          }));
+          break;
+
+        case 'ESP32_DEVKIT':
+          name = 'ESP32 NodeMCU DevKit V1 (Wi-Fi + BLE)';
+          unit = 'MCU';
+          pins = holeIds.map((hid, idx) => ({
+            id: `pin_${idx + 1}`,
+            name: idx === 0 ? '3V3 Output' : idx === 1 ? 'GND' : idx === 14 ? 'VIN (5V)' : `DIP Pin ${idx + 1}`,
+            relativePos: [(idx % 15 - 7) * 0.00254, idx < 15 ? -0.00381 : 0.00381, 0] as [number, number, number],
+            connectedHoleId: hid,
+          }));
+          break;
+
+        case 'ARDUINO_UNO_R3':
+          name = 'Arduino Uno R3 Microcontroller Board';
+          unit = 'MCU';
+          pins = [
+            { id: '5v', name: '5V Power Output', relativePos: [-0.02, 0, 0.014], connectedHoleId: `${id}:5v` },
+            { id: '3v3', name: '3.3V Output', relativePos: [-0.015, 0, 0.014], connectedHoleId: `${id}:3v3` },
+            { id: 'gnd', name: 'GND Ground', relativePos: [-0.01, 0, 0.014], connectedHoleId: `${id}:gnd` },
+            { id: 'vin', name: 'VIN Power Input', relativePos: [-0.005, 0, 0.014], connectedHoleId: `${id}:vin` },
+          ];
+          break;
+
+        case 'TOOL_SOLDERING_IRON':
+          name = 'ESD Soldering Iron Station';
+          unit = '°C';
+          pins = [];
           break;
 
         default:

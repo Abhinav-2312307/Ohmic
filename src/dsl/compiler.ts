@@ -395,6 +395,320 @@ function getComponentBlueprint(
       };
     }
 
+    case 'buzzer': {
+      const isPassive = primaryValue.toLowerCase().includes('passive') || optMap.has('passive');
+      return {
+        type: isPassive ? 'BUZZER_PASSIVE' : 'BUZZER_ACTIVE',
+        name: isPassive ? 'Passive Piezo Buzzer' : 'Active 5V Buzzer',
+        modelUrl: '',
+        unit: isPassive ? 'Ω' : 'Hz',
+        defaultValue: isPassive ? 16 : 2400,
+        pinTemplate: (holeIds) => [
+          { id: 'pos', name: '+', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[0] },
+          { id: 'neg', name: '-', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[1] },
+        ],
+      };
+    }
+
+    case 'relay':
+      return {
+        type: 'RELAY_MODULE_5V',
+        name: '5V 1-Channel Relay Module',
+        modelUrl: '',
+        unit: 'V',
+        defaultValue: 5,
+        pinTemplate: (holeIds) => [
+          { id: 'vcc', name: 'VCC (5V)', relativePos: [-0.007, 0, 0.016], connectedHoleId: holeIds[0] || 'vcc' },
+          { id: 'gnd', name: 'GND', relativePos: [-0.0035, 0, 0.016], connectedHoleId: holeIds[1] || 'gnd' },
+          { id: 'in', name: 'IN', relativePos: [0, 0, 0.016], connectedHoleId: holeIds[2] || 'in' },
+        ],
+      };
+
+    case 'servo': {
+      const angle = optMap.has('angle') ? parseFloat(optMap.get('angle')!) : 90;
+      return {
+        type: 'SERVO_SG90',
+        name: 'SG90 Micro Servo',
+        modelUrl: '',
+        unit: 'deg',
+        defaultValue: angle,
+        pinTemplate: (holeIds) => [
+          { id: 'gnd', name: 'GND (Brown)', relativePos: [-0.00254, 0, 0.018], connectedHoleId: holeIds[0] || 'gnd' },
+          { id: 'vcc', name: 'VCC (Red, 5V)', relativePos: [0, 0, 0.018], connectedHoleId: holeIds[1] || 'vcc' },
+          { id: 'sig', name: 'PWM SIG (Orange)', relativePos: [0.00254, 0, 0.018], connectedHoleId: holeIds[2] || 'sig' },
+        ],
+        extraDefaults: { state: { servoAngle: angle } },
+      };
+    }
+
+    case 'motor':
+      return {
+        type: 'DC_GEAR_MOTOR',
+        name: 'TT DC Gearbox Motor + Wheel',
+        modelUrl: '',
+        unit: 'RPM',
+        defaultValue: 200,
+        pinTemplate: (holeIds) => [
+          { id: 'pos', name: 'Motor +', relativePos: [-0.009, 0, 0.014], connectedHoleId: holeIds[0] || 'pos' },
+          { id: 'neg', name: 'Motor -', relativePos: [0.009, 0, 0.014], connectedHoleId: holeIds[1] || 'neg' },
+        ],
+      };
+
+    case 'sensor': {
+      const kind = (primaryValue || '').toLowerCase();
+      if (kind.includes('sonic') || kind.includes('dist') || kind.includes('sr04')) {
+        return {
+          type: 'SENSOR_HC_SR04',
+          name: 'HC-SR04 Ultrasonic Distance Sensor',
+          modelUrl: '',
+          unit: 'cm',
+          defaultValue: 25,
+          pinTemplate: (holeIds) => [
+            { id: 'vcc', name: 'VCC', relativePos: [-0.00381, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'trig', name: 'TRIG', relativePos: [-0.00127, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'echo', name: 'ECHO', relativePos: [0.00127, 0, 0], connectedHoleId: holeIds[2] },
+            { id: 'gnd', name: 'GND', relativePos: [0.00381, 0, 0], connectedHoleId: holeIds[3] },
+          ],
+        };
+      }
+      if (kind.includes('dht') || kind.includes('temp') || kind.includes('hum')) {
+        return {
+          type: 'SENSOR_DHT22',
+          name: 'DHT22 Temp & Humidity Sensor',
+          modelUrl: '',
+          unit: '°C',
+          defaultValue: 24,
+          pinTemplate: (holeIds) => [
+            { id: 'vcc', name: 'VCC', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'data', name: 'DATA', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'gnd', name: 'GND', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ],
+        };
+      }
+      if (kind.includes('pir') || kind.includes('motion')) {
+        return {
+          type: 'SENSOR_PIR',
+          name: 'HC-SR501 PIR Motion Sensor',
+          modelUrl: '',
+          unit: 'PIR',
+          defaultValue: 1,
+          pinTemplate: (holeIds) => [
+            { id: 'vcc', name: 'VCC', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'out', name: 'OUT', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'gnd', name: 'GND', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ],
+        };
+      }
+      if (kind.includes('sound') || kind.includes('mic')) {
+        return {
+          type: 'SENSOR_SOUND',
+          name: 'Microphone Sound Sensor',
+          modelUrl: '',
+          unit: 'dB',
+          defaultValue: 45,
+          pinTemplate: (holeIds) => [
+            { id: 'vcc', name: 'VCC', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'out', name: 'OUT', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'gnd', name: 'GND', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ],
+        };
+      }
+      if (kind.includes('soil') || kind.includes('moist')) {
+        return {
+          type: 'SENSOR_SOIL',
+          name: 'Capacitive Soil Moisture Sensor',
+          modelUrl: '',
+          unit: '%',
+          defaultValue: 60,
+          pinTemplate: (holeIds) => [
+            { id: 'vcc', name: 'VCC', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'sig', name: 'SIG', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'gnd', name: 'GND', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ],
+        };
+      }
+      if (kind.includes('hall') || kind.includes('mag')) {
+        return {
+          type: 'SENSOR_HALL',
+          name: 'A3144 Hall Effect Sensor',
+          modelUrl: '',
+          unit: 'MAG',
+          defaultValue: 1,
+          pinTemplate: (holeIds) => [
+            { id: 'vcc', name: 'VCC', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+            { id: 'gnd', name: 'GND', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+            { id: 'out', name: 'OUT', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+          ],
+        };
+      }
+      return {
+        type: 'SENSOR_IR_RECEIVER',
+        name: 'VS1838B IR Receiver',
+        modelUrl: '',
+        unit: 'IR',
+        defaultValue: 38,
+        pinTemplate: (holeIds) => [
+          { id: 'out', name: 'OUT', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[0] },
+          { id: 'gnd', name: 'GND', relativePos: [0, 0, 0], connectedHoleId: holeIds[1] },
+          { id: 'vcc', name: 'VCC', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[2] },
+        ],
+      };
+    }
+
+    case 'disp': {
+      const isLcd = primaryValue.toLowerCase().includes('lcd') || optMap.has('lcd');
+      return {
+        type: isLcd ? 'DISPLAY_LCD_1602_I2C' : 'DISPLAY_OLED_I2C',
+        name: isLcd ? '16x2 Character LCD (I2C)' : '0.96" I2C OLED Display',
+        modelUrl: '',
+        unit: isLcd ? 'LCD' : 'OLED',
+        defaultValue: 1,
+        pinTemplate: (holeIds) => [
+          { id: 'gnd', name: 'GND', relativePos: [-0.00381, 0, 0], connectedHoleId: holeIds[0] },
+          { id: 'vcc', name: 'VCC', relativePos: [-0.00127, 0, 0], connectedHoleId: holeIds[1] },
+          { id: 'scl', name: 'SCL', relativePos: [0.00127, 0, 0], connectedHoleId: holeIds[2] },
+          { id: 'sda', name: 'SDA', relativePos: [0.00381, 0, 0], connectedHoleId: holeIds[3] },
+        ],
+      };
+    }
+
+    case 'mcu': {
+      const kind = primaryValue.toLowerCase();
+      const isEsp32 = kind.includes('esp32');
+      const isUno = kind.includes('uno');
+      return {
+        type: isEsp32 ? 'ESP32_DEVKIT' : isUno ? 'ARDUINO_UNO_R3' : 'ARDUINO_NANO',
+        name: isEsp32 ? 'ESP32 NodeMCU DevKit V1' : isUno ? 'Arduino Uno R3' : 'Arduino Nano V3',
+        modelUrl: '',
+        unit: 'MCU',
+        defaultValue: 1,
+        pinTemplate: (holeIds) =>
+          holeIds.map((hid, idx) => ({
+            id: `p${idx + 1}`,
+            name: `Pin ${idx + 1}`,
+            relativePos: [(idx % 15 - 7) * 0.00254, idx < 15 ? -0.00381 : 0.00381, 0] as [number, number, number],
+            connectedHoleId: hid,
+          })),
+      };
+    }
+
+    case 'ic': {
+      const kind = primaryValue.toLowerCase();
+      if (kind.includes('4017')) {
+        return {
+          type: 'DIP16_CD4017',
+          name: 'CD4017 Decade Counter IC',
+          modelUrl: '',
+          unit: 'IC',
+          defaultValue: 4017,
+          pinTemplate: (holeIds) =>
+            holeIds.map((hid, idx) => ({
+              id: `p${idx + 1}`,
+              name: `Pin ${idx + 1}`,
+              relativePos: [(idx % 8 - 3.5) * 0.00254, idx < 8 ? -0.00381 : 0.00381, 0] as [number, number, number],
+              connectedHoleId: hid,
+            })),
+        };
+      }
+      if (kind.includes('595')) {
+        return {
+          type: 'DIP16_74HC595',
+          name: '74HC595 Shift Register',
+          modelUrl: '',
+          unit: 'IC',
+          defaultValue: 595,
+          pinTemplate: (holeIds) =>
+            holeIds.map((hid, idx) => ({
+              id: `p${idx + 1}`,
+              name: `Pin ${idx + 1}`,
+              relativePos: [(idx % 8 - 3.5) * 0.00254, idx < 8 ? -0.00381 : 0.00381, 0] as [number, number, number],
+              connectedHoleId: hid,
+            })),
+        };
+      }
+      if (kind.includes('393')) {
+        return {
+          type: 'DIP8_LM393',
+          name: 'LM393 Dual Comparator',
+          modelUrl: '',
+          unit: 'IC',
+          defaultValue: 393,
+          pinTemplate: (holeIds) => [
+            { id: 'p1', name: 'OUT1 (1)', relativePos: [-0.00381, -0.00381, 0], connectedHoleId: holeIds[0] },
+            { id: 'p2', name: 'IN1- (2)', relativePos: [-0.00127, -0.00381, 0], connectedHoleId: holeIds[1] },
+            { id: 'p3', name: 'IN1+ (3)', relativePos: [0.00127, -0.00381, 0], connectedHoleId: holeIds[2] },
+            { id: 'p4', name: 'GND (4)', relativePos: [0.00381, -0.00381, 0], connectedHoleId: holeIds[3] },
+            { id: 'p5', name: 'IN2+ (5)', relativePos: [-0.00381, 0.00381, 0], connectedHoleId: holeIds[4] },
+            { id: 'p6', name: 'IN2- (6)', relativePos: [-0.00127, 0.00381, 0], connectedHoleId: holeIds[5] },
+            { id: 'p7', name: 'OUT2 (7)', relativePos: [0.00127, 0.00381, 0], connectedHoleId: holeIds[6] },
+            { id: 'p8', name: 'VCC (8)', relativePos: [0.00381, 0.00381, 0], connectedHoleId: holeIds[7] },
+          ],
+        };
+      }
+      if (kind.includes('293')) {
+        return {
+          type: 'DIP16_L293D',
+          name: 'L293D Motor Driver IC',
+          modelUrl: '',
+          unit: 'IC',
+          defaultValue: 293,
+          pinTemplate: (holeIds) =>
+            holeIds.map((hid, idx) => ({
+              id: `p${idx + 1}`,
+              name: `Pin ${idx + 1}`,
+              relativePos: [(idx % 8 - 3.5) * 0.00254, idx < 8 ? -0.00381 : 0.00381, 0] as [number, number, number],
+              connectedHoleId: hid,
+            })),
+        };
+      }
+      return {
+        type: 'MODULE_TB6612FNG',
+        name: 'TB6612FNG Motor Driver',
+        modelUrl: '',
+        unit: 'MOD',
+        defaultValue: 6612,
+        pinTemplate: (holeIds) =>
+          holeIds.map((hid, idx) => ({
+            id: `p${idx + 1}`,
+            name: `Pin ${idx + 1}`,
+            relativePos: [(idx % 8 - 3.5) * 0.00254, idx < 8 ? -0.00381 : 0.00381, 0] as [number, number, number],
+            connectedHoleId: hid,
+          })),
+      };
+    }
+
+    case 'keypad':
+      return {
+        type: 'KEYPAD_4X4',
+        name: '4x4 Matrix Keypad',
+        modelUrl: '',
+        unit: 'KEY',
+        defaultValue: 16,
+        pinTemplate: (holeIds) =>
+          ['r1', 'r2', 'r3', 'r4', 'c1', 'c2', 'c3', 'c4'].map((col, idx) => ({
+            id: col,
+            name: `Pin ${col.toUpperCase()}`,
+            relativePos: [(idx - 3.5) * 0.0035, 0, 0.006] as [number, number, number],
+            connectedHoleId: holeIds[idx] || col,
+          })),
+      };
+
+    case 'encoder':
+      return {
+        type: 'ROTARY_ENCODER_KY040',
+        name: 'KY-040 Rotary Encoder',
+        modelUrl: '',
+        unit: 'PULSE',
+        defaultValue: 20,
+        pinTemplate: (holeIds) => [
+          { id: 'clk', name: 'CLK', relativePos: [-0.00508, 0, 0], connectedHoleId: holeIds[0] },
+          { id: 'dt', name: 'DT', relativePos: [-0.00254, 0, 0], connectedHoleId: holeIds[1] },
+          { id: 'sw', name: 'SW', relativePos: [0, 0, 0], connectedHoleId: holeIds[2] },
+          { id: 'vcc', name: 'VCC', relativePos: [0.00254, 0, 0], connectedHoleId: holeIds[3] },
+          { id: 'gnd', name: 'GND', relativePos: [0.00508, 0, 0], connectedHoleId: holeIds[4] },
+        ],
+      };
+
     default:
       return {
         type: 'RESISTOR',

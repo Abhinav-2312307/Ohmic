@@ -29,6 +29,16 @@ export enum TokenType {
   KW_LDR       = 'KW_LDR',
   KW_LM358     = 'KW_LM358',
   KW_MB102     = 'KW_MB102',
+  KW_BUZZER    = 'KW_BUZZER',
+  KW_RELAY     = 'KW_RELAY',
+  KW_SERVO     = 'KW_SERVO',
+  KW_MOTOR     = 'KW_MOTOR',
+  KW_SENSOR    = 'KW_SENSOR',
+  KW_DISP      = 'KW_DISP',
+  KW_MCU       = 'KW_MCU',
+  KW_IC        = 'KW_IC',
+  KW_KEYPAD    = 'KW_KEYPAD',
+  KW_ENCODER   = 'KW_ENCODER',
 
   // Keywords — Commands
   KW_PLACE     = 'KW_PLACE',
@@ -197,8 +207,18 @@ export const COMPONENT_KEYWORDS: Record<string, TokenType> = {
   pnp:    TokenType.KW_PNP,
   mosfet: TokenType.KW_MOSFET,
   ldr:    TokenType.KW_LDR,
-  lm358:  TokenType.KW_LM358,
-  mb102:  TokenType.KW_MB102,
+  lm358:   TokenType.KW_LM358,
+  mb102:   TokenType.KW_MB102,
+  buzzer:  TokenType.KW_BUZZER,
+  relay:   TokenType.KW_RELAY,
+  servo:   TokenType.KW_SERVO,
+  motor:   TokenType.KW_MOTOR,
+  sensor:  TokenType.KW_SENSOR,
+  disp:    TokenType.KW_DISP,
+  mcu:     TokenType.KW_MCU,
+  ic:      TokenType.KW_IC,
+  keypad:  TokenType.KW_KEYPAD,
+  encoder: TokenType.KW_ENCODER,
 };
 
 export const COMMAND_KEYWORDS: Record<string, TokenType> = {
