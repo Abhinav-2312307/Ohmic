@@ -15,7 +15,7 @@ import {
   COLOR_NAME_MAP,
 } from './types';
 import { CircuitComponent, JumperWire, ComponentType, ComponentPin } from '../engine/componentTypes';
-import { getHolePosition } from '../engine/breadboardModel';
+import { getHolePosition, getComponentFootprint, BREADBOARD_HOLES } from '../engine/breadboardModel';
 
 // ── Value Parsers ────────────────────────────────────────────────────────────
 
@@ -790,12 +790,47 @@ function resolveWireEndpoint(endpoint: string, componentMap: Map<string, Circuit
         return `${comp.id}:neg`;
       }
     }
-    // For other components, find the pin by name or id
+    // For other components, find the pin by name or id with comprehensive aliases
     if (comp) {
-      const pin = comp.pins.find(p =>
-        p.name.toLowerCase() === pinName.toLowerCase() ||
-        p.id.toLowerCase() === pinName.toLowerCase()
-      );
+      const norm = pinName.toLowerCase().trim();
+      const pin = comp.pins.find((p) => {
+        const pid = p.id.toLowerCase();
+        const pname = p.name.toLowerCase();
+        if (pid === norm || pname === norm) return true;
+
+        // Pin 1 aliases (p1, 1, pin 1)
+        if ((norm === 'p1' || norm === '1' || norm === 'pin1' || norm === 'pin 1') &&
+            (pid === 'r1' || pid === 'l1' || pid === 'cp1' || pid === 'sw1' || pid === 't1' || pid === 'p1' || pid === 'a' || pname.includes('anode') || pname.includes('(1)'))) {
+          return true;
+        }
+
+        // Pin 2 aliases (p2, 2, pin 2)
+        if ((norm === 'p2' || norm === '2' || norm === 'pin2' || norm === 'pin 2') &&
+            (pid === 'r2' || pid === 'l2' || pid === 'cp2' || pid === 'sw2' || pid === 't2' || pid === 'p2' || pid === 'k' || pname.includes('cathode') || pname.includes('(2)'))) {
+          return true;
+        }
+
+        // Anode / Cathode aliases
+        if ((norm === 'anode' || norm === 'a' || norm === '+') &&
+            (pname.includes('anode') || pid === 'l1' || pid === 'p1' || pid === 'a' || pid === 'cp1')) {
+          return true;
+        }
+        if ((norm === 'cathode' || norm === 'k' || norm === '-') &&
+            (pname.includes('cathode') || pid === 'l2' || pid === 'p2' || pid === 'k' || pid === 'cp2')) {
+          return true;
+        }
+
+        // DIP and IC pin matching e.g. "p8", "8", "pin 8"
+        const numMatch = norm.match(/^p?(\d+)$/);
+        if (numMatch) {
+          const num = numMatch[1];
+          if (pid === `p${num}` || pid === num || pname.includes(`(${num})`) || pname.includes(`pin ${num}`) || pname.includes(` ${num}`)) {
+            return true;
+          }
+        }
+
+        return false;
+      });
       if (pin?.connectedHoleId) return pin.connectedHoleId;
     }
     return `${compId}:${pinName}`;
@@ -911,6 +946,14 @@ export function compile(ast: OhmScriptAST): CompiledCircuit {
         }
       } else {
         holeIds = parsed.holeIds;
+
+        // Auto-expand footprint for single-hole anchor placements (e.g. place U1 E10, place U2 E25)
+        if (holeIds.length === 1 && BREADBOARD_HOLES.has(holeIds[0])) {
+          const fp = getComponentFootprint(blueprint.type, holeIds[0], 0);
+          if (fp.isValid && fp.holeIds.length > 1) {
+            holeIds = fp.holeIds;
+          }
+        }
 
         // Calculate 3D position from first hole
         if (holeIds.length > 0) {

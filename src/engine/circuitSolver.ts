@@ -558,11 +558,33 @@ export function solveCircuit(
 
           // Astable / Monostable trigger comparison
           let isHigh = true;
-          if (vThres > vThresRef) {
-            isHigh = false;
-          } else if (vTrig < vTrigRef) {
-            isHigh = true;
+          const isAstable = pTRIG?.connectedHoleId && pTHRES?.connectedHoleId && uf.find(pTRIG.connectedHoleId) === uf.find(pTHRES.connectedHoleId);
+          if (isAstable && pDISCH?.connectedHoleId && pVCC?.connectedHoleId && pGND?.connectedHoleId && pTRIG?.connectedHoleId) {
+            // Find timing components connected to NE555
+            const r1Comp = components.find(c => c.type === 'RESISTOR' && c.pins.some(p => p.connectedHoleId && uf.find(p.connectedHoleId) === uf.find(pVCC.connectedHoleId!)) && c.pins.some(p => p.connectedHoleId && uf.find(p.connectedHoleId) === uf.find(pDISCH.connectedHoleId!)));
+            const r2Comp = components.find(c => c.type === 'RESISTOR' && c.pins.some(p => p.connectedHoleId && uf.find(p.connectedHoleId) === uf.find(pDISCH.connectedHoleId!)) && c.pins.some(p => p.connectedHoleId && uf.find(p.connectedHoleId) === uf.find(pTRIG.connectedHoleId!)));
+            const c1Comp = components.find(c => (c.type === 'CAPACITOR_ELECTROLYTIC' || c.type === 'CAPACITOR_CERAMIC' || c.type === 'CAPACITOR_FILM') && c.pins.some(p => p.connectedHoleId && uf.find(p.connectedHoleId) === uf.find(pTRIG.connectedHoleId!)) && c.pins.some(p => p.connectedHoleId && uf.find(p.connectedHoleId) === uf.find(pGND.connectedHoleId!)));
+
+
+            const r1Val = r1Comp?.value || 10000;
+            const r2Val = r2Comp?.value || 47000;
+            const c1Val = c1Comp?.value || 0.00001;
+
+            const tHigh = Math.max(0.04, 0.693 * (r1Val + r2Val) * c1Val);
+            const tLow = Math.max(0.04, 0.693 * r2Val * c1Val);
+            const tPeriod = tHigh + tLow;
+
+            const now = Date.now() / 1000;
+            const phase = now % tPeriod;
+            isHigh = phase < tHigh;
+          } else {
+            if (vThres > vThresRef) {
+              isHigh = false;
+            } else if (vTrig < vTrigRef) {
+              isHigh = true;
+            }
           }
+
 
           if (nOUT) {
             const vOutTarget = isHigh ? vcc - 1.4 : gnd + 0.1;
@@ -734,8 +756,54 @@ export function solveCircuit(
         if (pVDD && pVSS) {
           const nVDD = rootToNodeId.get(uf.find(pVDD)) ?? 0;
           const nVSS = rootToNodeId.get(uf.find(pVSS)) ?? 0;
-          const activeIdx = (comp.state?.counterIndex ?? 0) % 10;
+
+          // Clock pin (p14), Reset pin (p15), Enable/Inhibit (p13)
+          const pCLK = comp.pins.find((p) => p.id === 'p14' || p.name?.includes('CLK'))?.connectedHoleId;
+          const pRST = comp.pins.find((p) => p.id === 'p15' || p.name?.includes('RESET'))?.connectedHoleId;
+          const pINH = comp.pins.find((p) => p.id === 'p13' || p.name?.includes('INH') || p.name?.includes('ENABLE'))?.connectedHoleId;
+
+          const nCLK = pCLK ? (rootToNodeId.get(uf.find(pCLK)) ?? 0) : 0;
+          const nRST = pRST ? (rootToNodeId.get(uf.find(pRST)) ?? 0) : 0;
+          const nINH = pINH ? (rootToNodeId.get(uf.find(pINH)) ?? 0) : 0;
+
+          const vClk = nCLK === 0 ? 0 : x[nCLK - 1] || 0;
+          const vRst = nRST === 0 ? 0 : x[nRST - 1] || 0;
+          const vInh = nINH === 0 ? 0 : x[nINH - 1] || 0;
+          const vGnd = nVSS === 0 ? 0 : x[nVSS - 1] || 0;
+
+          let activeIdx = comp.state?.counterIndex ?? 0;
+          const prevClk = (comp.state as any)?.lastClkHigh ?? false;
+          const isClkHigh = (vClk - vGnd) >= 2.0;
+          const isInhibited = (vInh - vGnd) >= 2.0;
+
           const qPinIds = ['p3', 'p2', 'p4', 'p7', 'p10', 'p1', 'p5', 'p6', 'p9', 'p11'];
+          const resetQIndex = qPinIds.findIndex((pid) => {
+            const pinHole = comp.pins.find((p) => p.id === pid)?.connectedHoleId;
+            return pinHole && pRST && uf.find(pinHole) === uf.find(pRST);
+          });
+
+          // Clock rising edge detection (only once per solve step, not on every diode iteration)
+          if (iter === 0) {
+            if (!isInhibited && !prevClk && isClkHigh) {
+              activeIdx = (activeIdx + 1) % 10;
+              if (resetQIndex !== -1 && activeIdx >= resetQIndex) {
+                activeIdx = 0;
+              }
+            }
+
+            // External active-high reset
+            if ((vRst - vGnd) >= 2.0 && resetQIndex === -1) {
+              activeIdx = 0;
+            }
+
+            comp.state = {
+              ...comp.state,
+              counterIndex: activeIdx,
+              lastClkHigh: isClkHigh,
+            } as any;
+          }
+
+
           qPinIds.forEach((pid, qIdx) => {
             const pinHole = comp.pins.find((p) => p.id === pid)?.connectedHoleId;
             if (pinHole) {

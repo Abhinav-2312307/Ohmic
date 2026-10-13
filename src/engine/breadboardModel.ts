@@ -494,17 +494,17 @@ export function getComponentFootprint(
     case 'IC_555':
     case 'DIP8_LM358':
     case 'DIP8_LM393': {
-      // DIP-8 straddles the central trough across Row E and Row F
+      // DIP-8 straddles the central trough across Row E and Row F in counter-clockwise JEDEC order
       const col = Math.min(60, Math.max(1, currentCol));
       const holeIds = [
         `E${col}`,
         `E${col + 1}`,
         `E${col + 2}`,
         `E${col + 3}`,
-        `F${col}`,
-        `F${col + 1}`,
-        `F${col + 2}`,
         `F${col + 3}`,
+        `F${col + 2}`,
+        `F${col + 1}`,
+        `F${col}`,
       ];
       return { holeIds, isValid: true };
     }
@@ -513,11 +513,11 @@ export function getComponentFootprint(
     case 'DIP16_74HC595':
     case 'DIP16_L293D':
     case 'IC_SOCKET_DIP': {
-      // DIP-16 straddles the central trough across Row E and Row F over 8 columns
+      // DIP-16 straddles the central trough across Row E and Row F over 8 columns in counter-clockwise JEDEC order
       const col = Math.min(56, Math.max(1, currentCol));
       const holeIds: string[] = [];
       for (let i = 0; i < 8; i++) holeIds.push(`E${col + i}`);
-      for (let i = 0; i < 8; i++) holeIds.push(`F${col + i}`);
+      for (let i = 7; i >= 0; i--) holeIds.push(`F${col + i}`);
       return { holeIds, isValid: true };
     }
 
