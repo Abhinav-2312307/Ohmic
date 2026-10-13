@@ -109,6 +109,7 @@ export interface CircuitComponent {
     opAmpGain?: number; // For LM358
     comparatorState?: boolean; // For LM393
     counterIndex?: number; // For CD4017 (0 to 9)
+    lastClkHigh?: boolean; // For CD4017 clock edge detection
     shiftRegisterBits?: number; // For 74HC595 (8 bits output byte 0-255)
     motorRpm?: number; // For DC gear motors (live RPM)
     motorDirection?: 'CW' | 'CCW' | 'STOP';
